@@ -68,9 +68,11 @@ import { CounterCharacterPlugin } from "@/components/editor/plugins/actions/coun
 import { ImportExportPlugin } from "@/components/editor/plugins/actions/import-export-plugin"
 import { SaveFilePlugin } from "@/components/editor/plugins/actions/save-file-plugin"
 import { AutoSavePlugin } from "@/components/editor/plugins/actions/auto-save-plugin"
+import { UnsavedChangesPlugin } from "@/components/editor/plugins/actions/unsaved-changes-plugin"
 import { ContextMenuPlugin } from "@/components/editor/plugins/context-menu-plugin"
 import { editorTheme } from "@/components/editor/themes/editor-theme"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { NoteService } from "@/lib/database-service"
 
 const initialValue = {
   root: {
@@ -122,9 +124,10 @@ const editorConfig: InitialConfigType = {
 interface BrutalEditorProps {
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
+  onUnsavedChangesWarning?: (hasUnsavedChanges: boolean, saveFunction: () => Promise<void>) => void
 }
 
-export function BrutalEditor({ onFileSaved, onLoadFile }: BrutalEditorProps = {}) {
+export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning }: BrutalEditorProps = {}) {
   const [editorState, setEditorState] = useState<SerializedEditorState>(initialValue)
   const [currentAutoSavedFileId, setCurrentAutoSavedFileId] = useState<number | null>(null)
 
@@ -142,6 +145,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile }: BrutalEditorProps = {}
             onLoadFile={onLoadFile} 
             currentAutoSavedFileId={currentAutoSavedFileId}
             onAutoSavedFileChange={setCurrentAutoSavedFileId}
+            onUnsavedChangesWarning={onUnsavedChangesWarning}
           />
 
           <OnChangePlugin
@@ -158,14 +162,17 @@ export function BrutalEditor({ onFileSaved, onLoadFile }: BrutalEditorProps = {}
 
 const placeholder = `Start writing here...`
 
-function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, onAutoSavedFileChange }: { 
+function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, onAutoSavedFileChange, onUnsavedChangesWarning }: { 
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   currentAutoSavedFileId?: number | null
   onAutoSavedFileChange?: (fileId: number | null) => void
+  onUnsavedChangesWarning?: (hasUnsavedChanges: boolean, saveFunction: () => Promise<void>) => void
 }) {
   const [editor] = useLexicalComposerContext()
   const contentEditableRef = useRef<HTMLDivElement>(null)
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(false)
+  const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null)
   
   // Auto-focus the editor on mount
   useEffect(() => {
@@ -292,6 +299,57 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
         
         {/* Page Break Plugin */}
         <PageBreakPlugin />
+        
+        {/* Unsaved Changes Plugin */}
+        <UnsavedChangesPlugin
+          currentFileId={currentAutoSavedFileId}
+          isAutoSaveEnabled={autoSaveEnabled}
+          lastSaveTime={lastSaveTime}
+          onUnsavedChangesChange={onUnsavedChangesWarning}
+          onManualSave={async () => {
+            // Trigger auto-save manually when user chooses to save
+            const editorState = editor.getEditorState()
+            const contentJson = JSON.stringify(editorState.toJSON())
+            
+            // Use the auto-save logic to save current content
+            const allNotes = await NoteService.getAllNotes()
+            let tempFolderId: number | undefined
+
+            if (allNotes.success && allNotes.data) {
+              const tempFolder = allNotes.data.find(note => 
+                note.isFolder && note.title === 'temp'
+              )
+              tempFolderId = tempFolder?.id
+            }
+
+            if (!tempFolderId) {
+              console.error('❌ Temp folder not found')
+              return
+            }
+
+            if (currentAutoSavedFileId) {
+              // Update existing file
+              await NoteService.updateNote(currentAutoSavedFileId, {
+                content: contentJson,
+                updatedAt: new Date()
+              })
+            } else {
+              // Create new auto-save file
+              const fileName = `UnsavedChanges-${Date.now()}.lexical`
+              const result = await NoteService.createNote(
+                fileName,
+                contentJson,
+                `/temp/${fileName}`,
+                false,
+                tempFolderId
+              )
+              if (result.success && result.data) {
+                onAutoSavedFileChange?.(result.data.id)
+              }
+            }
+            onFileSaved?.()
+          }}
+        />
       </div>
       
       {/* Actions Bar */}
@@ -303,11 +361,15 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
                      currentAutoSavedFileId={currentAutoSavedFileId}
                      onAutoSavedFileChange={onAutoSavedFileChange}
                    />
-                   <AutoSavePlugin 
-                     onFileSaved={onFileSaved}
-                     currentAutoSavedFileId={currentAutoSavedFileId}
-                     onAutoSavedFileChange={onAutoSavedFileChange}
-                   />
+                  <AutoSavePlugin 
+                    onFileSaved={onFileSaved}
+                    currentAutoSavedFileId={currentAutoSavedFileId}
+                    onAutoSavedFileChange={onAutoSavedFileChange}
+                    onAutoSaveStateChange={(isEnabled, lastSave) => {
+                      setAutoSaveEnabled(isEnabled)
+                      setLastSaveTime(lastSave)
+                    }}
+                  />
                    <ImportExportPlugin />
                  </div>
                  <div className="flex justify-center">

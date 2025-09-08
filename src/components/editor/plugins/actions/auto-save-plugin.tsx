@@ -12,9 +12,10 @@ interface AutoSavePluginProps {
   onFileSaved?: () => void
   currentAutoSavedFileId?: number | null
   onAutoSavedFileChange?: (fileId: number | null) => void
+  onAutoSaveStateChange?: (isEnabled: boolean, lastSaveTime: Date | null) => void
 }
 
-export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSavedFileChange }: AutoSavePluginProps) {
+export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSavedFileChange, onAutoSaveStateChange }: AutoSavePluginProps) {
   const [editor] = useLexicalComposerContext()
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false) // Default disabled until user types
   const [userHasTyped, setUserHasTyped] = useState(false) // Track if user has started typing
@@ -27,6 +28,11 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
   useEffect(() => {
     currentFileIdRef.current = currentAutoSavedFileId || null
   }, [currentAutoSavedFileId])
+
+  // Notify parent of auto-save state changes
+  useEffect(() => {
+    onAutoSaveStateChange?.(isAutoSaveEnabled, lastSaveTime)
+  }, [isAutoSaveEnabled, lastSaveTime, onAutoSaveStateChange])
 
   const createNickFileName = async (): Promise<string> => {
     try {

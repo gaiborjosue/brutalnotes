@@ -7,6 +7,7 @@ import { TodoPanel } from "./TodoPanel"
 import { FileSystemPanel } from "./FileSystemPanel"
 import { PomodoroPanel } from "./PomodoroPanel"
 import { BrutalEditor } from "./BrutalEditor"
+import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-changes-dialog"
 import { useRef, useState, useCallback } from "react"
 import { NoteService } from "@/lib/database-service"
 import { Camera, Menu } from "lucide-react"
@@ -16,6 +17,13 @@ export function MainLayout() {
   const fileSystemRef = useRef<{ refreshFileTree: () => Promise<void> } | null>(null)
   const [loadFileContent, setLoadFileContent] = useState<((content: string, fileId: number) => void) | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
+  
+  // Unsaved changes management
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [unsavedSaveFunction, setUnsavedSaveFunction] = useState<(() => Promise<void>) | null>(null)
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
+  const [actionDescription, setActionDescription] = useState("")
 
   const handleCameraCapture = () => {
     alert("📸 Camera feature coming soon! This will allow you to capture paper notes and convert them to digital text.")
@@ -32,20 +40,65 @@ export function MainLayout() {
     setLoadFileContent(() => loadFunction)
   }, [])
 
+  // Handle unsaved changes warning from editor
+  const handleUnsavedChangesWarning = useCallback((unsavedChanges: boolean, saveFunction: () => Promise<void>) => {
+    setHasUnsavedChanges(unsavedChanges)
+    setUnsavedSaveFunction(() => saveFunction)
+  }, [])
+
+  // Check for unsaved changes before performing an action
+  const checkUnsavedChanges = (action: () => void, description: string) => {
+    if (hasUnsavedChanges && unsavedSaveFunction) {
+      setPendingAction(() => action)
+      setActionDescription(description)
+      setShowUnsavedDialog(true)
+      return false // Action blocked
+    }
+    action()
+    return true // Action performed
+  }
+
   const handleFileClick = async (noteId: number) => {
-    // Load file content into editor
-    if (loadFileContent) {
-      try {
-        const result = await NoteService.getNoteById(noteId)
-        if (result.success && result.data) {
-          loadFileContent(result.data.content, noteId)
-        } else {
-          console.error('Failed to load file:', result.error)
+    const loadFile = async () => {
+      // Load file content into editor
+      if (loadFileContent) {
+        try {
+          const result = await NoteService.getNoteById(noteId)
+          if (result.success && result.data) {
+            loadFileContent(result.data.content, noteId)
+          } else {
+            console.error('Failed to load file:', result.error)
+          }
+        } catch (error) {
+          console.error('Error loading file:', error)
         }
-      } catch (error) {
-        console.error('Error loading file:', error)
       }
     }
+
+    checkUnsavedChanges(loadFile, "switch to another file")
+  }
+
+  // Dialog handlers
+  const handleSaveAndContinue = async () => {
+    if (unsavedSaveFunction) {
+      await unsavedSaveFunction()
+      if (pendingAction) {
+        pendingAction()
+        setPendingAction(null)
+      }
+    }
+  }
+
+  const handleDiscardAndContinue = () => {
+    if (pendingAction) {
+      pendingAction()
+      setPendingAction(null)
+    }
+  }
+
+  const handleCancelAction = () => {
+    setPendingAction(null)
+    setActionDescription("")
   }
 
   const renderSidebarPanels = () => (
@@ -57,7 +110,13 @@ export function MainLayout() {
       
       {/* File System Panel */}
       <div className="h-[calc(33.333%-0.5rem)]">
-        <FileSystemPanel ref={fileSystemRef} onFileClick={handleFileClick} />
+        <FileSystemPanel 
+          ref={fileSystemRef} 
+          onFileClick={handleFileClick}
+          onNewFileClick={(createFileAction) => {
+            checkUnsavedChanges(createFileAction, "create a new file")
+          }}
+        />
       </div>
       
       {/* Pomodoro Panel */}
@@ -130,13 +189,27 @@ export function MainLayout() {
               <CardContent className="p-0 h-[calc(100%-5rem)] relative overflow-hidden">
                        {/* Rich Text Editor */}
                        <div className="h-full max-h-full overflow-hidden">
-                         <BrutalEditor onFileSaved={handleFileSaved} onLoadFile={handleLoadFile} />
+                         <BrutalEditor 
+                           onFileSaved={handleFileSaved} 
+                           onLoadFile={handleLoadFile}
+                           onUnsavedChangesWarning={handleUnsavedChangesWarning}
+                         />
                        </div>
               </CardContent>
             </Card>
           </div>
         </div>
       </div>
+      
+      {/* Unsaved Changes Dialog */}
+      <UnsavedChangesDialog
+        isOpen={showUnsavedDialog}
+        onOpenChange={setShowUnsavedDialog}
+        onSave={handleSaveAndContinue}
+        onDiscard={handleDiscardAndContinue}
+        onCancel={handleCancelAction}
+        actionDescription={actionDescription}
+      />
     </div>
   )
 }
