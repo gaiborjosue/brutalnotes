@@ -46,13 +46,30 @@ export class BrutalNotesDB extends Dexie {
 // Create and export database instance
 export const db = new BrutalNotesDB()
 
+// Global flag to prevent multiple initializations
+let isInitializing = false
+let isInitialized = false
+
 // Initialize database (create default folders if needed)
 export async function initializeDatabase() {
+  // Prevent multiple simultaneous initializations
+  if (isInitializing || isInitialized) {
+    console.log('📋 Database initialization already completed or in progress')
+    return { success: true }
+  }
+  
+  isInitializing = true
+  
   try {
+    // Ensure database is open
+    await db.open()
+    
     // Check if we have any notes, if not create default structure
     const noteCount = await db.notes.count()
+    console.log(`📊 Found ${noteCount} existing notes in database`)
     
     if (noteCount === 0) {
+      console.log('🔥 Creating default folder structure...')
       // Create temp folder first (will be positioned at top)
       const tempFolder = await db.notes.add({
         title: 'temp',
@@ -63,17 +80,19 @@ export async function initializeDatabase() {
         updatedAt: new Date(),
         syncStatus: 'pending'
       })
+      console.log('✅ Created temp folder with ID:', tempFolder)
 
       // Create default "Brutal Notes" folder 
-      await db.notes.add({
+      const brutalFolder = await db.notes.add({
         title: 'Brutal Notes',
         content: '',
-        path: '/',
+        path: '/Brutal Notes',
         isFolder: true,
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending'
       })
+      console.log('✅ Created Brutal Notes folder with ID:', brutalFolder)
 
       // Create a welcome note in temp folder
       const welcomeContent = JSON.stringify({
@@ -125,7 +144,7 @@ export async function initializeDatabase() {
         },
       })
 
-      await db.notes.add({
+      const welcomeFile = await db.notes.add({
         title: 'welcome.lexical',
         content: welcomeContent,
         path: '/temp/welcome.lexical',
@@ -135,15 +154,45 @@ export async function initializeDatabase() {
         updatedAt: new Date(),
         syncStatus: 'pending'
       })
+      console.log('✅ Created welcome note with ID:', welcomeFile)
+      
+      // Verify what was created
+      const finalCount = await db.notes.count()
+      console.log(`📊 Database now has ${finalCount} items`)
+    } else {
+      console.log('📂 Database already has data, skipping initialization')
     }
 
     console.log('🔥 BRUTAL NOTES Database initialized successfully!')
+    isInitialized = true
     return { success: true }
   } catch (error) {
     console.error('❌ Failed to initialize database:', error)
+    return { success: false, error: String(error) }
+  } finally {
+    isInitializing = false
+  }
+}
+
+// Helper function to clear database for testing (call from browser console)
+export async function clearDatabase() {
+  try {
+    await db.notes.clear()
+    await db.todos.clear()
+    isInitialized = false
+    console.log('🧹 Database cleared successfully!')
+    console.log('🔄 Refresh the page to see default folders recreated')
+    return { success: true }
+  } catch (error) {
+    console.error('❌ Failed to clear database:', error)
     return { success: false, error: String(error) }
   }
 }
 
 // Export for easy access in components
 export default db
+
+// Make clearDatabase available globally for testing
+if (typeof window !== 'undefined') {
+  (window as any).clearDatabase = clearDatabase
+}

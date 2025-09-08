@@ -54,7 +54,7 @@ export function SaveFilePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
       const editorState = editor.getEditorState()
       const contentJson = JSON.stringify(editorState.toJSON())
 
-      // Find temp folder first
+      // Find temp folder (should always exist since database is initialized first)
       const allNotes = await NoteService.getAllNotes()
       let tempFolderId: number | undefined
 
@@ -65,12 +65,11 @@ export function SaveFilePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
         tempFolderId = tempFolder?.id
       }
 
-      // If no temp folder, create it
+      // Temp folder should always exist after database initialization
       if (!tempFolderId) {
-        const tempResult = await NoteService.createNote('temp', '', '/temp', true)
-        if (tempResult.success && tempResult.data) {
-          tempFolderId = tempResult.data.id
-        }
+        console.error('❌ Temp folder not found - database initialization may have failed')
+        setSaving(false)
+        return
       }
 
       // Save the note to temp folder
