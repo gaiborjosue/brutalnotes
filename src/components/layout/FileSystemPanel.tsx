@@ -29,10 +29,12 @@ export interface FileSystemPanelRef {
 interface FileSystemPanelProps {
   onFileClick?: (noteId: number) => void
   onNewFileClick?: (createFileAction: () => void) => void
+  onFileDeleted?: (noteId: number) => void
+  onFolderCleared?: (deletedNoteIds: number[]) => void
   currentFileId?: number | null
 }
 
-export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick, currentFileId }, ref) => {
+export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick, onFileDeleted, onFolderCleared, currentFileId }, ref) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [loading, setLoading] = useState(true)
   const [editingFile, setEditingFile] = useState<string | null>(null)
@@ -40,6 +42,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+
 
   // Load file tree from database
   useEffect(() => {
@@ -90,6 +93,8 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     const noteId = parseInt(id)
     const result = await NoteService.deleteNote(noteId)
     if (result.success) {
+      // Notify parent that file was deleted
+      onFileDeleted?.(noteId)
       // Refresh the file tree
       await refreshFileTree()
     } else {
@@ -113,18 +118,28 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         note.parentId === folderNoteId && !note.isFolder
       )
 
-      // Delete each note
+      // Delete each note and collect successfully deleted IDs
+      const deletedNoteIds: number[] = []
       for (const note of notesToDelete) {
-        const result = await NoteService.deleteNote(note.id)
-        if (!result.success) {
-          console.error(`Failed to delete note ${note.title}:`, result.error)
+        if (note.id) {
+          const result = await NoteService.deleteNote(note.id)
+          if (result.success) {
+            deletedNoteIds.push(note.id)
+          } else {
+            console.error(`Failed to delete note ${note.title}:`, result.error)
+          }
         }
+      }
+
+      // Notify parent about cleared notes
+      if (deletedNoteIds.length > 0) {
+        onFolderCleared?.(deletedNoteIds)
       }
 
       // Refresh the file tree
       await refreshFileTree()
       
-      console.log(`✅ Cleared ${notesToDelete.length} notes from folder`)
+      console.log(`✅ Cleared ${deletedNoteIds.length} notes from folder`)
     } catch (error) {
       console.error('Error clearing notes from folder:', error)
     }
@@ -388,11 +403,11 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
                 if (e.key === 'Enter') finishRename()
                 if (e.key === 'Escape') cancelRename()
               }}
-              className="flex-1 text-sm font-mono h-6 border-2 border-black"
+              className="flex-1 text-xs font-mono h-6 border-2 border-black"
               autoFocus
             />
           ) : (
-            <span className="text-sm font-mono text-black flex-1 break-words leading-tight">
+            <span className="text-xs font-mono text-black flex-1 break-words leading-tight">
               {/* Mobile-friendly filename display */}
               <span className="block md:hidden">
                 {node.name.length > 15 ? (
@@ -430,7 +445,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
                 <div className="space-y-1">
                   <Button
                     size="sm"
-                    className="w-full justify-start text-left font-mono text-sm border-2 border-black hover:bg-blue-300 bg-white"
+                    className="w-full justify-start text-left font-mono text-xs border-2 border-black hover:bg-blue-300 bg-white"
                     onClick={() => startRename(node.id, node.name)}
                   >
                     <Edit3 className="h-3 w-3 mr-2" />
@@ -441,7 +456,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
                   {node.type === 'folder' && (
                     <Button
                       size="sm"
-                      className="w-full justify-start text-left font-mono text-sm text-orange-600 border-2 border-black hover:bg-blue-300 bg-white"
+                      className="w-full justify-start text-left font-mono text-xs text-orange-600 border-2 border-black hover:bg-blue-300 bg-white"
                       onClick={() => clearNotesFromFolder(node.id)}
                     >
                       <Trash className="h-3 w-3 mr-2" />
@@ -451,7 +466,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
                   
                   <Button
                     size="sm"
-                    className="w-full justify-start text-left font-mono text-sm text-red-600 border-2 border-black hover:bg-blue-300 bg-white"
+                    className="w-full justify-start text-left font-mono text-xs text-red-600 border-2 border-black hover:bg-blue-300 bg-white"
                     onClick={() => node.noteId && deleteFile(node.id)}
                   >
                     <Trash2 className="h-3 w-3 mr-2" />
@@ -496,7 +511,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
               <div className="space-y-1">
                 <Button
                   size="sm"
-                  className="w-full justify-start text-left font-mono text-sm hover:bg-green-100 border-2 border-black"
+                  className="w-full justify-start text-left font-mono text-xs hover:bg-green-100 border-2 border-black"
                   onClick={createNewFolder}
                 >
                   <FolderPlus className="h-3 w-3 mr-2" />
@@ -504,7 +519,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
                 </Button>
                 <Button
                   size="sm"
-                  className="w-full justify-start text-left font-mono text-sm hover:bg-blue-100 border-2 border-black"
+                  className="w-full justify-start text-left font-mono text-xs hover:bg-blue-100 border-2 border-black"
                   onClick={() => {
                     if (onNewFileClick) {
                       onNewFileClick(createNewNote)

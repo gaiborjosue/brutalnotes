@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import {
   type InitialConfigType,
   LexicalComposer,
@@ -133,11 +133,47 @@ interface BrutalEditorProps {
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   onUnsavedChangesWarning?: (hasUnsavedChanges: boolean, saveFunction: () => Promise<void>) => void
+  onAutoSavedFileChange?: (fileId: number | null) => void
+  currentFileId?: number | null
 }
 
-export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning }: BrutalEditorProps = {}) {
+export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning, onAutoSavedFileChange, currentFileId }: BrutalEditorProps = {}) {
   const [editorState, setEditorState] = useState<SerializedEditorState>(initialValue)
   const [currentAutoSavedFileId, setCurrentAutoSavedFileId] = useState<number | null>(null)
+  const [currentFileName, setCurrentFileName] = useState<string | null>(null)
+
+  // Fetch current file name when currentFileId changes
+  useEffect(() => {
+    const fetchFileName = async () => {
+      if (currentFileId) {
+        try {
+          const result = await NoteService.getNoteById(currentFileId)
+          if (result.success && result.data) {
+            // Remove .lexical extension for display
+            const displayName = result.data.title.endsWith('.lexical') 
+              ? result.data.title.slice(0, -8)
+              : result.data.title
+            setCurrentFileName(displayName)
+          } else {
+            setCurrentFileName(null)
+          }
+        } catch (error) {
+          console.error('Error fetching file name:', error)
+          setCurrentFileName(null)
+        }
+      } else {
+        setCurrentFileName(null)
+      }
+    }
+    
+    fetchFileName()
+  }, [currentFileId])
+
+  // Combined handler for auto-saved file changes
+  const handleAutoSavedFileChange = useCallback((fileId: number | null) => {
+    setCurrentAutoSavedFileId(fileId) // Update internal state
+    onAutoSavedFileChange?.(fileId)   // Notify parent (MainLayout)
+  }, [onAutoSavedFileChange])
 
     return (
       <div className="bg-white h-full flex flex-col overflow-hidden border-t-4 border-black">
@@ -152,8 +188,9 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning 
             onFileSaved={onFileSaved} 
             onLoadFile={onLoadFile} 
             currentAutoSavedFileId={currentAutoSavedFileId}
-            onAutoSavedFileChange={setCurrentAutoSavedFileId}
+            onAutoSavedFileChange={handleAutoSavedFileChange}
             onUnsavedChangesWarning={onUnsavedChangesWarning}
+            currentFileName={currentFileName}
           />
 
           <OnChangePlugin
@@ -170,12 +207,13 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning 
 
 const placeholder = `Start writing here...`
 
-function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, onAutoSavedFileChange, onUnsavedChangesWarning }: { 
+function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, onAutoSavedFileChange, onUnsavedChangesWarning, currentFileName }: { 
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   currentAutoSavedFileId?: number | null
   onAutoSavedFileChange?: (fileId: number | null) => void
   onUnsavedChangesWarning?: (hasUnsavedChanges: boolean, saveFunction: () => Promise<void>) => void
+  currentFileName?: string | null
 }) {
   const [editor] = useLexicalComposerContext()
   const contentEditableRef = useRef<HTMLDivElement>(null)
@@ -216,6 +254,15 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
 
   return (
     <div className="h-full flex flex-col">
+      {/* Current File Title - Minimal Display */}
+      {currentFileName && (
+        <div className="px-3 py-1 bg-neutral-50 border-b border-neutral-200">
+          <span className="text-xs text-neutral-600 font-mono">
+            📄 {currentFileName}
+          </span>
+        </div>
+      )}
+      
       {/* Brutal Toolbar */}
       <ToolbarPlugin>
         {() => (
