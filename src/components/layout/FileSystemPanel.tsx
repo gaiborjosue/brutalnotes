@@ -29,9 +29,10 @@ export interface FileSystemPanelRef {
 interface FileSystemPanelProps {
   onFileClick?: (noteId: number) => void
   onNewFileClick?: (createFileAction: () => void) => void
+  currentFileId?: number | null
 }
 
-export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick }, ref) => {
+export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick, currentFileId }, ref) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [loading, setLoading] = useState(true)
   const [editingFile, setEditingFile] = useState<string | null>(null)
@@ -336,6 +337,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   const renderFileNode = (node: FileNode, depth = 0) => {
     const indent = depth * 16
     const isEditing = editingFile === node.id
+    const isCurrentFile = node.type === 'file' && node.noteId === currentFileId
 
     return (
       <div key={node.id}>
@@ -343,7 +345,11 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
           className={`flex items-center gap-2 p-1 ${
             node.type === 'folder' ? 'cursor-pointer' : 'cursor-pointer'
           } ${
-            dropTarget === node.id ? 'bg-blue-100 border-2 border-blue-400 border-dashed' : 'hover:bg-gray-100'
+            isCurrentFile 
+              ? 'bg-yellow-200 border-2 border-yellow-400 shadow-[2px_2px_0px_0px_#000] font-bold' 
+              : dropTarget === node.id 
+                ? 'bg-blue-100 border-2 border-blue-400 border-dashed' 
+                : 'hover:bg-gray-100'
           } ${
             draggedItem === node.id ? 'opacity-50' : ''
           }`}
@@ -370,7 +376,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
               <Folder className="h-4 w-4 text-blue-600" />
             )
           ) : (
-            <FileText className="h-4 w-4 text-gray-600" />
+            <FileText className={`h-4 w-4 ${isCurrentFile ? 'text-yellow-800' : 'text-gray-600'}`} />
           )}
           
           {isEditing ? (

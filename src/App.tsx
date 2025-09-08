@@ -1,8 +1,12 @@
 import { useEffect, useState, useRef } from 'react'
 import { MainLayout } from './components/layout/MainLayout'
 import { initializeDatabase } from './lib/database'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { AuthContainer } from './components/auth/AuthContainer'
+import { AuthLoader } from './components/auth/AuthLoader'
 
-function App() {
+// Protected App Component (only renders when authenticated)
+function ProtectedApp() {
   const [isDbInitialized, setIsDbInitialized] = useState(false)
   const initializationStarted = useRef(false)
 
@@ -42,6 +46,33 @@ function App() {
   }
 
   return <MainLayout />
+}
+
+// Auth-aware App Component
+function AppContent() {
+  const { user, loading } = useAuth()
+
+  // Show loading screen while checking auth state
+  if (loading) {
+    return <AuthLoader />
+  }
+
+  // Show auth form if not authenticated
+  if (!user) {
+    return <AuthContainer />
+  }
+
+  // User is authenticated, show the main app
+  return <ProtectedApp />
+}
+
+// Main App with Auth Provider
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  )
 }
 
 export default App
