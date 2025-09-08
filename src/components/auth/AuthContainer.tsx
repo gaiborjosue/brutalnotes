@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { LoginForm } from './LoginForm'
 import { SignUpForm } from './SignUpForm'
 import { Button } from '../ui/button'
+import Star11 from '@/components/stars/s11'
 
 export const AuthContainer: React.FC = () => {
   const [isSignUp, setIsSignUp] = useState(false)
@@ -19,8 +20,9 @@ export const AuthContainer: React.FC = () => {
 
       <Card className="w-full max-w-md relative z-10 bg-white border-4 border-black shadow-[8px_8px_0px_0px_#000]">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-black text-black mb-2">
-            🔥 BRUTAL NOTES
+          <CardTitle className="text-3xl font-black text-black mb-2 flex items-center justify-center gap-2">
+            <Star11 size={32} color="#000" />
+            BRUTAL NOTES
           </CardTitle>
           <CardDescription className="text-lg font-bold text-gray-700">
             {isSignUp ? 'CREATE YOUR ACCOUNT' : 'WELCOME BACK'}
