@@ -15,9 +15,29 @@ interface AutoSavePluginProps {
   onAutoSaveStateChange?: (isEnabled: boolean, lastSaveTime: Date | null) => void
 }
 
+// Load auto-save preference from localStorage
+const loadAutoSavePreference = (): boolean => {
+  try {
+    const saved = localStorage.getItem('brutal-notes-auto-save-enabled')
+    return saved !== null ? JSON.parse(saved) : false
+  } catch (error) {
+    console.error('Error loading auto-save preference:', error)
+    return false
+  }
+}
+
+// Save auto-save preference to localStorage
+const saveAutoSavePreference = (enabled: boolean): void => {
+  try {
+    localStorage.setItem('brutal-notes-auto-save-enabled', JSON.stringify(enabled))
+  } catch (error) {
+    console.error('Error saving auto-save preference:', error)
+  }
+}
+
 export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSavedFileChange, onAutoSaveStateChange }: AutoSavePluginProps) {
   const [editor] = useLexicalComposerContext()
-  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false) // Default disabled until user types
+  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(() => loadAutoSavePreference())
   const [userHasTyped, setUserHasTyped] = useState(false) // Track if user has started typing
   const [isAutoSaving, setIsAutoSaving] = useState(false)
   const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null)
@@ -157,8 +177,8 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
     if (hasContent && !userHasTyped) {
       // User has started typing for the first time
       setUserHasTyped(true)
-      setIsAutoSaveEnabled(true)
-      console.log('🔥 User started typing - Auto-save enabled!')
+      // Don't automatically enable auto-save - respect user's saved preference
+      console.log('🔥 User started typing - Auto-save preference:', isAutoSaveEnabled ? 'enabled' : 'disabled')
     }
     
     // Only run auto-save if enabled and user has typed
@@ -191,19 +211,20 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
   }, [])
 
   const toggleAutoSave = () => {
-    if (!userHasTyped) {
-      // If user hasn't typed yet, just toggle the preference
-      setIsAutoSaveEnabled(!isAutoSaveEnabled)
-    } else {
-      // If user has typed, allow manual toggle
-      setIsAutoSaveEnabled(!isAutoSaveEnabled)
-      if (isAutoSaveEnabled) {
-        // If disabling, clear any pending auto-save
-        if (saveTimeoutRef.current) {
-          clearTimeout(saveTimeoutRef.current)
-        }
-      }
+    const newAutoSaveState = !isAutoSaveEnabled
+    
+    // Update state
+    setIsAutoSaveEnabled(newAutoSaveState)
+    
+    // Save preference to localStorage
+    saveAutoSavePreference(newAutoSaveState)
+    
+    // If disabling, clear any pending auto-save
+    if (!newAutoSaveState && saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
     }
+    
+    console.log('💾 Auto-save preference saved:', newAutoSaveState ? 'enabled' : 'disabled')
   }
 
   const formatLastSaveTime = () => {
@@ -243,15 +264,25 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
           <div className="font-black">AUTO-SAVE {isAutoSaveEnabled ? 'ENABLED' : 'DISABLED'}</div>
           <div className="text-xs mt-1">
             {!userHasTyped ? (
-              'Will auto-enable when you start typing'
+              <>
+                {isAutoSaveEnabled ? 'Ready to auto-save when you type' : 'Auto-save disabled - click to enable'}
+                <br />
+                <span className="text-gray-600">Preference saved</span>
+              </>
             ) : isAutoSaveEnabled ? (
               <>
                 Saves instantly on every edit to temp folder
                 <br />
                 Last saved: {formatLastSaveTime()}
+                <br />
+                <span className="text-gray-600">Preference saved</span>
               </>
             ) : (
-              'Click to enable automatic saving'
+              <>
+                Click to enable automatic saving
+                <br />
+                <span className="text-gray-600">Preference saved</span>
+              </>
             )}
           </div>
         </div>
