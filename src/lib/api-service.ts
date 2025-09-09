@@ -2,7 +2,7 @@
 // Handles communication with the FastAPI backend while preserving offline-first approach
 
 import { supabase } from './supabase'
-import type { Todo } from './types'
+import type { Todo, Note } from './types'
 
 interface ApiResult<T> {
   success: boolean
@@ -128,7 +128,7 @@ class ApiService {
     const result = await this.makeRequest<{todo: any}>('/todos', 'POST', todoData)
     if (result.success && result.data) {
       // Map server format to frontend format
-      const mappedTodo = {
+      const mappedTodo: Todo = {
         text: result.data.todo.text,
         completed: result.data.todo.completed,
         serverId: String(result.data.todo.id),
@@ -146,7 +146,7 @@ class ApiService {
     const result = await this.makeRequest<{todo: any}>(`/todos/${id}`, 'PUT', updates)
     if (result.success && result.data) {
       // Map server format to frontend format
-      const mappedTodo = {
+      const mappedTodo: Todo = {
         text: result.data.todo.text,
         completed: result.data.todo.completed,
         serverId: String(result.data.todo.id),
@@ -169,7 +169,7 @@ class ApiService {
     const result = await this.makeRequest<{todo: any}>(`/todos/${id}/toggle`, 'POST')
     if (result.success && result.data) {
       // Map server format to frontend format
-      const mappedTodo = {
+      const mappedTodo: Todo = {
         text: result.data.todo.text,
         completed: result.data.todo.completed,
         serverId: String(result.data.todo.id),
@@ -280,6 +280,158 @@ class ApiService {
 
     // Fallback to connection check
     return this.checkConnection()
+  }
+
+  // =================
+  // NOTES API METHODS
+  // =================
+
+  // Get all notes from backend
+  static async getAllNotes(): Promise<ApiResult<Note[]>> {
+    // Backend automatically filters out soft-deleted notes (deleted_at IS NULL)
+    const result = await this.makeRequest<any>('/notes?page=1&limit=1000')
+    if (result.success && result.data) {
+      const notes = result.data.notes || []
+      
+      // Map server format to frontend format
+      const mappedNotes = notes.map((serverNote: any) => ({
+        title: serverNote.title,
+        content: serverNote.content,
+        path: serverNote.path,
+        isFolder: serverNote.is_folder,
+        serverId: String(serverNote.id),
+        serverParentId: serverNote.parent_id ? String(serverNote.parent_id) : undefined,
+        clientId: serverNote.client_id,
+        createdAt: new Date(serverNote.created_at),
+        updatedAt: new Date(serverNote.updated_at),
+        syncStatus: 'synced' as const,
+        deleted: false
+      }))
+      
+      console.log(`📥 Pulled ${mappedNotes.length} active notes from server (soft-deleted notes filtered by backend)`)
+      return { success: true, data: mappedNotes }
+    }
+    return result
+  }
+
+  // Get notes tree structure from backend
+  static async getNotesTree(): Promise<ApiResult<any[]>> {
+    const result = await this.makeRequest<any>('/notes/tree')
+    if (result.success && result.data) {
+      return { success: true, data: result.data.tree || [] }
+    }
+    return result
+  }
+
+  // Create note on backend
+  static async createNote(noteData: Partial<Note>): Promise<ApiResult<Note>> {
+    const serverNoteData = {
+      title: noteData.title,
+      content: noteData.content,
+      path: noteData.path,
+      is_folder: noteData.isFolder,
+      parent_id: noteData.serverParentId || null,
+      client_id: noteData.clientId || noteData.id
+    }
+    
+    const result = await this.makeRequest<{note: any}>('/notes', 'POST', serverNoteData)
+    if (result.success && result.data) {
+      const mappedNote: Note = {
+        title: result.data.note.title,
+        content: result.data.note.content,
+        path: result.data.note.path,
+        isFolder: result.data.note.is_folder,
+        serverId: String(result.data.note.id),
+        serverParentId: result.data.note.parent_id ? String(result.data.note.parent_id) : undefined,
+        clientId: result.data.note.client_id,
+        createdAt: new Date(result.data.note.created_at),
+        updatedAt: new Date(result.data.note.updated_at),
+        syncStatus: 'synced' as const,
+        deleted: false
+      }
+      return { success: true, data: mappedNote }
+    }
+    return { success: false, error: result.error || 'Failed to create note' }
+  }
+
+  // Update note on backend
+  static async updateNote(id: string, updates: Partial<Note>): Promise<ApiResult<Note>> {
+    const serverUpdates = {
+      title: updates.title,
+      content: updates.content,
+      path: updates.path,
+      is_folder: updates.isFolder,
+      parent_id: updates.serverParentId
+    }
+    
+    const result = await this.makeRequest<{note: any}>(`/notes/${id}`, 'PUT', serverUpdates)
+    if (result.success && result.data) {
+      const mappedNote: Note = {
+        title: result.data.note.title,
+        content: result.data.note.content,
+        path: result.data.note.path,
+        isFolder: result.data.note.is_folder,
+        serverId: String(result.data.note.id),
+        serverParentId: result.data.note.parent_id ? String(result.data.note.parent_id) : undefined,
+        clientId: result.data.note.client_id,
+        createdAt: new Date(result.data.note.created_at),
+        updatedAt: new Date(result.data.note.updated_at),
+        syncStatus: 'synced' as const,
+        deleted: false
+      }
+      return { success: true, data: mappedNote }
+    }
+    return { success: false, error: result.error || 'Failed to create note' }
+  }
+
+  // Delete note on backend
+  static async deleteNote(id: string): Promise<ApiResult<void>> {
+    return this.makeRequest<void>(`/notes/${id}`, 'DELETE')
+  }
+
+  // Bulk sync notes with backend using the official bulk-sync endpoint
+  static async bulkSyncNotes(
+    notesToSync: Note[], 
+    deletedClientIds: number[] = []
+  ): Promise<ApiResult<Note[]>> {
+    const syncData = {
+      notes: notesToSync.map(note => ({
+        title: note.title,
+        content: note.content,
+        path: note.path,
+        is_folder: note.isFolder,
+        parent_id: note.serverParentId || null,
+        client_id: note.clientId || note.id
+      })),
+      client_notes_deleted: deletedClientIds,
+      last_sync_timestamp: null // Could be enhanced later for incremental sync
+    }
+    
+    console.log(`📤 Bulk syncing ${notesToSync.length} notes, deleting ${deletedClientIds.length} client IDs`)
+    
+    const result = await this.makeRequest<any>('/notes/bulk-sync', 'POST', syncData)
+    if (result.success && result.data) {
+      const syncedNotes = result.data.notes || []
+      
+      // Map server format to frontend format
+      const mappedNotes = syncedNotes.map((serverNote: any) => ({
+        title: serverNote.title,
+        content: serverNote.content,
+        path: serverNote.path,
+        isFolder: serverNote.is_folder,
+        serverId: String(serverNote.id),
+        serverParentId: serverNote.parent_id ? String(serverNote.parent_id) : undefined,
+        clientId: serverNote.client_id,
+        createdAt: new Date(serverNote.created_at),
+        updatedAt: new Date(serverNote.updated_at),
+        syncStatus: 'synced' as const,
+        deleted: false
+      }))
+      
+      console.log(`✅ Bulk sync successful: ${mappedNotes.length} notes synced`)
+      return { success: true, data: mappedNotes }
+    }
+    return result
   }
 }
 

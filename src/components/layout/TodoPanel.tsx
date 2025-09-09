@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Plus, Trash2, RefreshCw, Wifi, WifiOff } from "lucide-react"
+import { Plus, Trash2, RefreshCw } from "lucide-react"
 import Star10 from "@/components/stars/s10"
 import { TodoService } from "@/lib/database-service"
 import type { Todo } from "@/lib/types"
@@ -134,14 +134,7 @@ export function TodoPanel() {
             TODOS
           </div>
           <div className="flex items-center gap-2">
-            {/* Online/Offline indicator */}
-            {isOnline ? (
-              <Wifi size={16} className="text-green-600" />
-            ) : (
-              <WifiOff size={16} className="text-red-600" />
-            )}
-            
-            {/* Sync button */}
+            {/* Sync button - no connectivity indicator here anymore */}
             <Button
               onClick={handleManualSync}
               disabled={!isOnline || syncing}
@@ -216,10 +209,10 @@ export function TodoPanel() {
                       {todo.text}
                     </span>
                     
-                    {/* Sync status indicator - only show yellow dot for pending */}
+                    {/* Sync status indicator - only show red dot for actual errors */}
                     <div className="flex items-center gap-1">
-                      {(todo.syncStatus === 'pending' || todo.syncStatus === 'error') && (
-                        <div className="w-2 h-2 bg-yellow-500 rounded-full" title="Pending sync" />
+                      {todo.syncStatus === 'error' && (
+                        <div className="w-2 h-2 bg-red-500 rounded-full" title="Sync failed - will retry automatically" />
                       )}
                       
                       <Button

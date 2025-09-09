@@ -3,7 +3,7 @@
 
 import ApiService from './api-service'
 import { db } from './database'
-import type { Todo, DatabaseResult } from './types'
+import type { Todo } from './types'
 
 interface SyncResult {
   success: boolean
@@ -145,60 +145,7 @@ class SyncService {
     }
   }
 
-  // Legacy individual sync methods - deprecated in favor of bulk sync
-  /** @deprecated Use bulk sync instead for better performance */
-  private static async syncNewTodo(localTodo: Todo): Promise<void> {
-    const apiResult = await ApiService.createTodo(localTodo.text)
-    
-    if (!apiResult.success || !apiResult.data) {
-      throw new Error(apiResult.error || 'Failed to create todo on server')
-    }
-
-    const serverTodo = apiResult.data
-    
-    // Update local todo with server ID and mark as synced
-    if (localTodo.id) {
-      console.log(`✅ Marking todo ${localTodo.id} as synced with serverId: ${serverTodo.id}`)
-      await db.todos.update(localTodo.id, {
-        serverId: String(serverTodo.id || serverTodo.serverId),
-        syncStatus: 'synced',
-        updatedAt: new Date()
-      })
-      
-      // Verify the update worked
-      const updated = await db.todos.get(localTodo.id)
-      console.log(`🔍 Verified todo ${localTodo.id} status:`, { syncStatus: updated?.syncStatus, serverId: updated?.serverId })
-    }
-  }
-
-  /** @deprecated Use bulk sync instead for better performance */
-  private static async syncExistingTodo(localTodo: Todo): Promise<void> {
-    if (!localTodo.serverId) {
-      throw new Error('Cannot sync existing todo without server ID')
-    }
-
-    const apiResult = await ApiService.updateTodo(localTodo.serverId, {
-      text: localTodo.text,
-      completed: localTodo.completed
-    })
-    
-    if (!apiResult.success) {
-      throw new Error(apiResult.error || 'Failed to update todo on server')
-    }
-
-    // Mark as synced in local database
-    if (localTodo.id) {
-      console.log(`✅ Marking existing todo ${localTodo.id} as synced`)
-      await db.todos.update(localTodo.id, { 
-        syncStatus: 'synced',
-        updatedAt: new Date()
-      })
-      
-      // Verify the update worked
-      const updated = await db.todos.get(localTodo.id)
-      console.log(`🔍 Verified existing todo ${localTodo.id} status:`, { syncStatus: updated?.syncStatus })
-    }
-  }
+  // NOTE: Legacy individual sync methods removed in favor of bulk sync for better performance
 
   // Sync a deleted todo to backend
   private static async syncDeletedTodo(localTodo: Todo): Promise<void> {
