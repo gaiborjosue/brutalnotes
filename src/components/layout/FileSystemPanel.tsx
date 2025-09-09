@@ -28,9 +28,10 @@ export interface FileSystemPanelRef {
 
 interface FileSystemPanelProps {
   onFileClick?: (noteId: number) => void
+  onNewFileClick?: (createFileAction: () => void) => void
 }
 
-export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick }, ref) => {
+export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick }, ref) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [loading, setLoading] = useState(true)
   const [editingFile, setEditingFile] = useState<string | null>(null)
@@ -255,6 +256,15 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
           setEditingFile(result.data.id.toString())
           // Remove .lexical for editing (user will see clean name)
           setEditingName(noteName.replace('.lexical', ''))
+          
+          // Automatically open the new file in the editor after a brief delay
+          // This allows the user to see the file being created and gives time for renaming
+          setTimeout(() => {
+            if (onFileClick) {
+              console.log('📖 Auto-opening newly created file in editor')
+              onFileClick(result.data.id)
+            }
+          }, 100)
         }
       } else {
         console.error('Failed to create note:', result.error)
@@ -489,7 +499,13 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
                 <Button
                   size="sm"
                   className="w-full justify-start text-left font-mono text-sm hover:bg-blue-100 border-2 border-black"
-                  onClick={createNewNote}
+                  onClick={() => {
+                    if (onNewFileClick) {
+                      onNewFileClick(createNewNote)
+                    } else {
+                      createNewNote()
+                    }
+                  }}
                 >
                   <FilePlus className="h-3 w-3 mr-2" />
                   New Note
