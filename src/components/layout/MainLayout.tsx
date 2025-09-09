@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -8,7 +9,6 @@ import { FileSystemPanel } from "./FileSystemPanel"
 import { PomodoroPanel } from "./PomodoroPanel"
 import { BrutalEditor } from "./BrutalEditor"
 import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-changes-dialog"
-import { useRef, useState, useCallback } from "react"
 import { NoteService } from "@/lib/database-service"
 import { Camera, Menu, LogOut } from "lucide-react"
 import Star24 from "@/components/stars/s24"
@@ -20,6 +20,7 @@ export function MainLayout() {
   const [loadFileContent, setLoadFileContent] = useState<((content: string, fileId: number) => void) | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [currentFileId, setCurrentFileId] = useState<number | null>(null)
+  
   
   // Unsaved changes management
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -57,6 +58,75 @@ export function MainLayout() {
       fileSystemRef.current?.refreshFileTree()
     }
   }, [])
+
+  // Handle file deletion - clear editor if current file was deleted
+  const handleFileDeleted = useCallback((deletedFileId: number) => {
+    if (currentFileId === deletedFileId) {
+      // Clear the current file state
+      setCurrentFileId(null)
+      // Clear any unsaved changes state
+      setHasUnsavedChanges(false)
+      setUnsavedSaveFunction(null)
+      
+      // Load empty editor content
+      if (loadFileContent) {
+        const emptyContent = JSON.stringify({
+          root: {
+            children: [
+              {
+                children: [],
+                direction: "ltr",
+                format: "",
+                indent: 0,
+                type: "paragraph",
+                version: 1,
+              },
+            ],
+            direction: "ltr",
+            format: "",
+            indent: 0,
+            type: "root",
+            version: 1,
+          },
+        })
+        loadFileContent(emptyContent, 0) // Use 0 as placeholder for empty state
+      }
+    }
+  }, [currentFileId, loadFileContent])
+
+  // Handle folder clearing - clear editor if current file was in the cleared folder
+  const handleFolderCleared = useCallback((deletedNoteIds: number[]) => {
+    if (currentFileId && deletedNoteIds.includes(currentFileId)) {
+      // Current file was among the cleared notes, clear the editor
+      setCurrentFileId(null)
+      setHasUnsavedChanges(false)
+      setUnsavedSaveFunction(null)
+      
+      // Load empty editor content
+      if (loadFileContent) {
+        const emptyContent = JSON.stringify({
+          root: {
+            children: [
+              {
+                children: [],
+                direction: "ltr",
+                format: "",
+                indent: 0,
+                type: "paragraph",
+                version: 1,
+              },
+            ],
+            direction: "ltr",
+            format: "",
+            indent: 0,
+            type: "root",
+            version: 1,
+          },
+        })
+        loadFileContent(emptyContent, 0) // Use 0 as placeholder for empty state
+      }
+    }
+  }, [currentFileId, loadFileContent])
 
   // Check for unsaved changes before performing an action
   const checkUnsavedChanges = (action: () => void, description: string) => {
@@ -129,6 +199,8 @@ export function MainLayout() {
           onNewFileClick={(createFileAction) => {
             checkUnsavedChanges(createFileAction, "create a new file")
           }}
+          onFileDeleted={handleFileDeleted}
+          onFolderCleared={handleFolderCleared}
           currentFileId={currentFileId}
         />
       </div>
@@ -234,6 +306,7 @@ export function MainLayout() {
                            onLoadFile={handleLoadFile}
                            onUnsavedChangesWarning={handleUnsavedChangesWarning}
                            onAutoSavedFileChange={handleAutoSavedFileChange}
+                           currentFileId={currentFileId}
                          />
                        </div>
               </CardContent>
