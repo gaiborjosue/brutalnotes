@@ -13,7 +13,8 @@ import {
   Trash2,
   Edit3,
   FolderPlus,
-  FilePlus
+  FilePlus,
+  Trash
 } from "lucide-react"
 import Star27 from "@/components/stars/s27"
 import { NoteService } from "@/lib/database-service"
@@ -111,6 +112,39 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       await refreshFileTree()
     } else {
       console.error('Failed to delete file:', result.error)
+    }
+  }
+
+  const clearNotesFromFolder = async (folderId: string) => {
+    try {
+      const folderNoteId = parseInt(folderId)
+      
+      // Get all notes
+      const allNotesResult = await NoteService.getAllNotes()
+      if (!allNotesResult.success || !allNotesResult.data) {
+        console.error('Failed to get notes:', allNotesResult.error)
+        return
+      }
+
+      // Find all notes that are children of this folder (not folders themselves)
+      const notesToDelete = allNotesResult.data.filter(note => 
+        note.parentId === folderNoteId && !note.isFolder
+      )
+
+      // Delete each note
+      for (const note of notesToDelete) {
+        const result = await NoteService.deleteNote(note.id)
+        if (!result.success) {
+          console.error(`Failed to delete note ${note.title}:`, result.error)
+        }
+      }
+
+      // Refresh the file tree
+      await refreshFileTree()
+      
+      console.log(`✅ Cleared ${notesToDelete.length} notes from folder`)
+    } catch (error) {
+      console.error('Error clearing notes from folder:', error)
     }
   }
 
@@ -381,7 +415,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
               <PopoverTrigger asChild>
                   <Button 
                   size="sm" 
-                  className="h-6 w-6 p-0 hover:bg-gray-200 border-2 border-black"
+                  className="h-6 w-6 p-0 hover:bg-blue-300 border-2 border-black bg-white"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="h-3 w-3" />
@@ -394,23 +428,28 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
                 <div className="space-y-1">
                   <Button
                     size="sm"
-                    className={`w-full justify-start text-left font-mono text-sm border-2 border-black ${
-                      node.type === 'folder' 
-                        ? 'hover:bg-transparent' 
-                        : 'hover:bg-blue-100'
-                    }`}
+                    className="w-full justify-start text-left font-mono text-sm border-2 border-black hover:bg-blue-300 bg-white"
                     onClick={() => startRename(node.id, node.name)}
                   >
                     <Edit3 className="h-3 w-3 mr-2" />
                     Rename
                   </Button>
+                  
+                  {/* Clear Notes option - only for folders */}
+                  {node.type === 'folder' && (
+                    <Button
+                      size="sm"
+                      className="w-full justify-start text-left font-mono text-sm text-orange-600 border-2 border-black hover:bg-blue-300 bg-white"
+                      onClick={() => clearNotesFromFolder(node.id)}
+                    >
+                      <Trash className="h-3 w-3 mr-2" />
+                      Clear Notes
+                    </Button>
+                  )}
+                  
                   <Button
                     size="sm"
-                    className={`w-full justify-start text-left font-mono text-sm text-red-600 border-2 border-black ${
-                      node.type === 'folder' 
-                        ? 'hover:bg-transparent' 
-                        : 'hover:bg-red-100'
-                    }`}
+                    className="w-full justify-start text-left font-mono text-sm text-red-600 border-2 border-black hover:bg-blue-300 bg-white"
                     onClick={() => node.noteId && deleteFile(node.id)}
                   >
                     <Trash2 className="h-3 w-3 mr-2" />

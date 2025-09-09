@@ -123,9 +123,9 @@ export function MainLayout() {
                   </TooltipProvider>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-0 h-[calc(100%-5rem)] relative">
+              <CardContent className="p-0 h-[calc(100%-5rem)] relative overflow-hidden">
                        {/* Rich Text Editor */}
-                       <div className="h-full">
+                       <div className="h-full max-h-full overflow-hidden">
                          <BrutalEditor onFileSaved={handleFileSaved} onLoadFile={handleLoadFile} />
                        </div>
               </CardContent>

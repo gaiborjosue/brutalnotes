@@ -35,9 +35,11 @@ import { CollapsibleContentNode } from "@/components/editor/nodes/collapsible-co
 import { CollapsibleTitleNode } from "@/components/editor/nodes/collapsible-title-node"
 import { ExcalidrawNode } from "@/components/editor/nodes/excalidraw-node"
 import { ImageNode } from "@/components/editor/nodes/image-node"
+import { PageBreakNode } from "@/components/editor/nodes/page-break-node"
 import { CollapsiblePlugin } from "@/components/editor/plugins/collapsible-plugin"
 import { ExcalidrawPlugin } from "@/components/editor/plugins/excalidraw-plugin"
 import { ImagesPlugin } from "@/components/editor/plugins/images-plugin"
+import { PageBreakPlugin } from "@/components/editor/plugins/page-break-plugin"
 import { ContentEditable } from "@/components/editor/editor-ui/content-editable"
 import { ToolbarPlugin } from "@/components/editor/plugins/toolbar/toolbar-plugin"
 import { HistoryToolbarPlugin } from "@/components/editor/plugins/toolbar/history-toolbar-plugin"
@@ -59,6 +61,7 @@ import { InsertEquation } from "@/components/editor/plugins/toolbar/block-insert
 import { InsertExcalidraw } from "@/components/editor/plugins/toolbar/block-insert/insert-excalidraw"
 import { InsertImage } from "@/components/editor/plugins/toolbar/block-insert/insert-image"
 import { InsertTable } from "@/components/editor/plugins/toolbar/block-insert/insert-table"
+import { InsertPageBreak } from "@/components/editor/plugins/toolbar/block-insert/insert-page-break"
 import { ActionsPlugin } from "@/components/editor/plugins/actions/actions-plugin"
 import { ClearEditorActionPlugin } from "@/components/editor/plugins/actions/clear-editor-plugin"
 import { CounterCharacterPlugin } from "@/components/editor/plugins/actions/counter-character-plugin"
@@ -109,6 +112,7 @@ const editorConfig: InitialConfigType = {
     CollapsibleTitleNode,
     ExcalidrawNode,
     ImageNode,
+    PageBreakNode,
   ],
   onError: (error: Error) => {
     console.error(error)
@@ -124,32 +128,32 @@ export function BrutalEditor({ onFileSaved, onLoadFile }: BrutalEditorProps = {}
   const [editorState, setEditorState] = useState<SerializedEditorState>(initialValue)
   const [currentAutoSavedFileId, setCurrentAutoSavedFileId] = useState<number | null>(null)
 
-  return (
-    <div className="bg-white h-full overflow-hidden border-t-4 border-black">
-      <LexicalComposer
-        initialConfig={{
-          ...editorConfig,
-          editorState: JSON.stringify(editorState),
-        }}
-      >
-        <TooltipProvider>
-        <BrutalEditorPlugins 
-          onFileSaved={onFileSaved} 
-          onLoadFile={onLoadFile} 
-          currentAutoSavedFileId={currentAutoSavedFileId}
-          onAutoSavedFileChange={setCurrentAutoSavedFileId}
-        />
-
-        <OnChangePlugin
-            ignoreSelectionChange={true}
-            onChange={(editorState) => {
-              setEditorState(editorState.toJSON())
-            }}
+    return (
+      <div className="bg-white h-full flex flex-col overflow-hidden border-t-4 border-black">
+        <LexicalComposer
+          initialConfig={{
+            ...editorConfig,
+            editorState: JSON.stringify(editorState),
+          }}
+        >
+          <TooltipProvider>
+          <BrutalEditorPlugins 
+            onFileSaved={onFileSaved} 
+            onLoadFile={onLoadFile} 
+            currentAutoSavedFileId={currentAutoSavedFileId}
+            onAutoSavedFileChange={setCurrentAutoSavedFileId}
           />
-        </TooltipProvider>
-      </LexicalComposer>
-    </div>
-  )
+
+          <OnChangePlugin
+              ignoreSelectionChange={true}
+              onChange={(editorState) => {
+                setEditorState(editorState.toJSON())
+              }}
+            />
+          </TooltipProvider>
+        </LexicalComposer>
+      </div>
+    )
 }
 
 const placeholder = `Start writing here...`
@@ -215,6 +219,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
               <InsertImage />
               <InsertTable />
               <InsertEquation />
+              <InsertPageBreak />
             </BlockInsertPlugin>
             <div className="w-px h-6 bg-black mx-1" />
             <HistoryToolbarPlugin />
@@ -235,14 +240,14 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
       </ToolbarPlugin>
 
       {/* Main Editor */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-hidden min-h-0 max-h-full">
                <RichTextPlugin
                  contentEditable={
-                   <div className="h-full p-6 overflow-y-auto custom-scrollbar" ref={contentEditableRef}>
+                   <div className="absolute inset-0 p-6 overflow-y-auto custom-scrollbar" ref={contentEditableRef}>
                      <div className="" ref={onRef}>
                        <ContentEditable
                          placeholder={placeholder}
-                         className="h-full min-h-[500px] outline-none font-mono text-lg leading-7 typewriter pr-24"
+                         className="outline-none font-mono text-lg leading-7 typewriter pr-24 w-full min-h-full"
                        />
                      </div>
                    </div>
@@ -284,6 +289,9 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
         
         {/* Images Plugin */}
         <ImagesPlugin />
+        
+        {/* Page Break Plugin */}
+        <PageBreakPlugin />
       </div>
       
       {/* Actions Bar */}
