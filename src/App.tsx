@@ -4,6 +4,7 @@ import { initializeDatabase } from './lib/database'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { AuthContainer } from './components/auth/AuthContainer'
 import { AuthLoader } from './components/auth/AuthLoader'
+import SyncService from './lib/sync-service'
 
 // Protected App Component (only renders when authenticated)
 function ProtectedApp() {
@@ -23,6 +24,11 @@ function ProtectedApp() {
       const result = await initializeDatabase()
       if (result.success) {
         console.log('✅ Database initialized successfully')
+        
+        // Setup automatic sync after database is ready
+        console.log('🔄 Setting up automatic sync...')
+        SyncService.setupAutoSync()
+        
         setIsDbInitialized(true)
       } else {
         console.error('❌ Failed to initialize database:', result.error)

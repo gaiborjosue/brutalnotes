@@ -14,7 +14,7 @@ export class BrutalNotesDB extends Dexie {
     
     // Define schema
     this.version(1).stores({
-      todos: '++id, text, completed, createdAt, updatedAt, syncStatus',
+      todos: '++id, serverId, text, completed, deleted, createdAt, updatedAt, syncStatus',
       notes: '++id, title, content, path, createdAt, updatedAt, syncStatus, isFolder, parentId'
     })
 
