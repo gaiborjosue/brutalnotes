@@ -25,12 +25,28 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 # Set working directory
 WORKDIR /app
 
+# Build arguments for environment variables
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_API_BASE_URL
+
+# Set environment variables from build args
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 # Install dependencies first (for better caching)
 COPY package*.json ./
 RUN npm install
 
 # Copy source code
 COPY . .
+
+# Debug environment variables
+RUN echo "Build-time environment check:" && \
+    echo "VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:0:30}..." && \
+    echo "VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:+[SET]}${VITE_SUPABASE_ANON_KEY:-[NOT SET]}" && \
+    echo "VITE_API_BASE_URL: $VITE_API_BASE_URL"
 
 # Build the application (skip TypeScript type checking for production build)
 RUN npx vite build
