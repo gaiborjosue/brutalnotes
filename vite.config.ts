@@ -9,7 +9,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      "@excalidraw/excalidraw/types": path.resolve(__dirname, "./node_modules/@excalidraw/excalidraw/types/types.d.ts"),
+      "@excalidraw/excalidraw/types": path.resolve(__dirname, "./node_modules/@excalidraw/excalidraw/dist/types/excalidraw/types.d.ts"),
+      "@excalidraw/excalidraw/element/types": path.resolve(__dirname, "./node_modules/@excalidraw/excalidraw/dist/types/excalidraw/element/types.d.ts"),
     },
   },
   optimizeDeps: {
