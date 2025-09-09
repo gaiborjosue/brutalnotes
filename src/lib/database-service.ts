@@ -1,6 +1,7 @@
 // BRUTAL NOTES - Database Service Layer
 
 import { db } from './database'
+import SyncService from './sync-service'
 import type { Todo, Note, FileNode, DatabaseResult } from './types'
 
 // =================
@@ -8,10 +9,19 @@ import type { Todo, Note, FileNode, DatabaseResult } from './types'
 // =================
 
 class TodoService {
-  // Get all todos
+  // Get all todos (excluding soft-deleted ones)
   static async getAllTodos(): Promise<DatabaseResult<Todo[]>> {
     try {
-      const todos = await db.todos.orderBy('createdAt').reverse().toArray()
+      const todos = await db.todos
+        .orderBy('createdAt')
+        .reverse()
+        .filter(todo => !todo.deleted)
+        .toArray()
+      
+      console.log(`📋 Retrieved ${todos.length} todos from DB:`, 
+        todos.map(t => ({ id: t.id, text: t.text?.slice(0, 20), syncStatus: t.syncStatus, serverId: t.serverId }))
+      )
+      
       return { success: true, data: todos }
     } catch (error) {
       return { success: false, error: String(error) }
@@ -30,7 +40,13 @@ class TodoService {
       }
       
       const id = await db.todos.add(todoData)
+      
+      // Update the todo with clientId (using the Dexie auto-generated ID)
+      await db.todos.update(id, { clientId: id })
       const todo = await db.todos.get(id)
+      
+      // Trigger async sync (don't wait for it to complete)
+      this.triggerSync()
       
       return { success: true, data: todo }
     } catch (error) {
@@ -41,8 +57,12 @@ class TodoService {
   // Update todo
   static async updateTodo(id: number, updates: Partial<Todo>): Promise<DatabaseResult<Todo>> {
     try {
-      await db.todos.update(id, updates)
+      // Always mark as pending when updating locally
+      await db.todos.update(id, { ...updates, syncStatus: 'pending' })
       const todo = await db.todos.get(id)
+      
+      // Trigger async sync
+      this.triggerSync()
       
       return { success: true, data: todo }
     } catch (error) {
@@ -58,8 +78,14 @@ class TodoService {
         return { success: false, error: 'Todo not found' }
       }
 
-      await db.todos.update(id, { completed: !todo.completed })
+      await db.todos.update(id, { 
+        completed: !todo.completed,
+        syncStatus: 'pending'
+      })
       const updatedTodo = await db.todos.get(id)
+      
+      // Trigger async sync
+      this.triggerSync()
       
       return { success: true, data: updatedTodo }
     } catch (error) {
@@ -67,13 +93,104 @@ class TodoService {
     }
   }
 
-  // Delete todo
+  // Delete todo (instant UI removal with background sync)
   static async deleteTodo(id: number): Promise<DatabaseResult<void>> {
     try {
-      await db.todos.delete(id)
+      const todo = await db.todos.get(id)
+      if (!todo) {
+        return { success: false, error: 'Todo not found' }
+      }
+      
+      if (todo.serverId) {
+        // Todo exists on server - mark as deleted immediately for instant UI feedback
+        await db.todos.update(id, { 
+          deleted: true, 
+          syncStatus: 'pending',
+          updatedAt: new Date()
+        })
+        
+        // Trigger background sync to delete from server
+        // This will cleanup the local record after successful server deletion
+        this.triggerSync()
+      } else {
+        // Local-only todo - hard delete immediately
+        await db.todos.delete(id)
+      }
+      
       return { success: true }
     } catch (error) {
       return { success: false, error: String(error) }
+    }
+  }
+
+  // =================
+  // SYNC HELPERS
+  // =================
+
+  // Trigger background sync (debounced)
+  private static syncTimeout: NodeJS.Timeout | null = null
+  private static triggerSync(): void {
+    // Clear existing timeout to debounce rapid operations
+    if (this.syncTimeout) {
+      clearTimeout(this.syncTimeout)
+    }
+    
+    // Sync after 2 seconds of inactivity
+    this.syncTimeout = setTimeout(async () => {
+      if (navigator.onLine) {
+        try {
+          console.log('🔄 Triggering background sync...')
+          await SyncService.syncTodos()
+          
+          // Emit a custom event to notify UI components to refresh
+          console.log('🔔 Emitting todosSynced event for UI refresh')
+          window.dispatchEvent(new CustomEvent('todosSynced'))
+        } catch (error) {
+          console.error('Background sync failed:', error)
+        }
+      }
+    }, 2000)
+  }
+
+  // Manual sync method for user-triggered syncs
+  static async syncTodos(): Promise<DatabaseResult<void>> {
+    try {
+      const result = await SyncService.performFullSync()
+      
+      // After sync, cleanup soft-deleted todos that are no longer needed
+      await this.cleanupDeletedTodos()
+      
+      if (result.success) {
+        console.log(`✅ Manual sync successful: ${result.syncedCount} items synced`)
+        
+        // Notify UI to refresh
+        console.log('🔔 Manual sync complete - emitting todosSynced event')
+        window.dispatchEvent(new CustomEvent('todosSynced'))
+        
+        return { success: true }
+      } else {
+        console.error('Manual sync failed:', result.errors)
+        return { success: false, error: result.errors.join(', ') }
+      }
+    } catch (error) {
+      console.error('Manual sync error:', error)
+      return { success: false, error: String(error) }
+    }
+  }
+
+  // Clean up soft-deleted todos that have been synced
+  private static async cleanupDeletedTodos(): Promise<void> {
+    try {
+      // Remove todos that are deleted and synced (or don't have server IDs)
+      await db.todos
+        .where('deleted')
+        .equals(true)
+        .and(todo => !todo.serverId || todo.syncStatus === 'synced')
+        .delete()
+      
+      console.log('🧹 Cleaned up synced deleted todos')
+    } catch (error) {
+      console.warn('Failed to cleanup deleted todos:', error)
     }
   }
 }

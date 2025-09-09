@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2, RefreshCw, Wifi, WifiOff } from "lucide-react"
 import Star10 from "@/components/stars/s10"
 import { TodoService } from "@/lib/database-service"
 import type { Todo } from "@/lib/types"
@@ -13,6 +13,9 @@ export function TodoPanel() {
   const [todos, setTodos] = useState<Todo[]>([])
   const [newTodo, setNewTodo] = useState("")
   const [loading, setLoading] = useState(true)
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [syncing, setSyncing] = useState(false)
+  const [networkError, setNetworkError] = useState<string | null>(null)
 
   // Load todos from database on component mount
   useEffect(() => {
@@ -28,6 +31,67 @@ export function TodoPanel() {
     
     loadTodos()
   }, [])
+
+  // Listen for online/offline status and sync events
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    
+    // Listen for sync completion to refresh UI
+    const handleSyncCompleted = async () => {
+      console.log('🔄 Sync completed, refreshing todos...')
+      const result = await TodoService.getAllTodos()
+      if (result.success && result.data) {
+        console.log(`📋 Refreshed ${result.data.length} todos from database`)
+        setTodos(result.data)
+      } else {
+        console.error('Failed to refresh todos after sync:', result.error)
+      }
+    }
+    
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('todosSynced', handleSyncCompleted)
+    
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('todosSynced', handleSyncCompleted)
+    }
+  }, [])
+
+  // Manual sync function
+  const handleManualSync = async () => {
+    if (!isOnline) return
+    
+    setSyncing(true)
+    setNetworkError(null)
+    
+    try {
+      console.log('🔄 Manual sync started...')
+      const result = await TodoService.syncTodos()
+      if (result.success) {
+        console.log('✅ Manual sync successful, refreshing UI...')
+        // Force refresh todos after manual sync
+        const todosResult = await TodoService.getAllTodos()
+        if (todosResult.success && todosResult.data) {
+          console.log(`📋 Manual sync: refreshed ${todosResult.data.length} todos`)
+          setTodos(todosResult.data)
+        }
+      } else {
+        console.error('❌ Manual sync failed:', result.error)
+        setNetworkError(result.error || 'Sync failed')
+        // Clear error after 5 seconds
+        setTimeout(() => setNetworkError(null), 5000)
+      }
+    } catch (error) {
+      console.error('Manual sync failed:', error)
+      setNetworkError('Network error occurred')
+      setTimeout(() => setNetworkError(null), 5000)
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const addTodo = async () => {
     if (newTodo.trim()) {
@@ -64,13 +128,44 @@ export function TodoPanel() {
   return (
     <Card className="h-full border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white">
       <CardHeader className="border-b-4 border-black bg-yellow-300 p-3">
-        <CardTitle className="text-lg font-black text-black flex items-center gap-2">
-          <Star10 size={20} color="#000" />
-          TODOS
+        <CardTitle className="text-lg font-black text-black flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Star10 size={20} color="#000" />
+            TODOS
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Online/Offline indicator */}
+            {isOnline ? (
+              <Wifi size={16} className="text-green-600" />
+            ) : (
+              <WifiOff size={16} className="text-red-600" />
+            )}
+            
+            {/* Sync button */}
+            <Button
+              onClick={handleManualSync}
+              disabled={!isOnline || syncing}
+              size="sm"
+              className="h-6 w-6 p-0 border border-black hover:bg-blue-400 disabled:opacity-50"
+              title={isOnline ? "Sync with server" : "Offline - cannot sync"}
+            >
+              <RefreshCw 
+                size={12} 
+                className={syncing ? "animate-spin" : ""} 
+              />
+            </Button>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="p-3 h-[calc(100%-4rem)]">
         <div className="space-y-3 h-full flex flex-col">
+          {/* Network error display */}
+          {networkError && (
+            <div className="bg-red-100 border-2 border-red-500 text-red-700 px-2 py-1 text-xs font-mono rounded">
+              ⚠️ {networkError}
+            </div>
+          )}
+          
           {/* Add new todo */}
           <div className="flex gap-2">
             <Input
@@ -102,7 +197,7 @@ export function TodoPanel() {
                 todos.map((todo) => (
                   <div
                     key={todo.id}
-                    className="flex items-center gap-2 p-2 border-2 border-black bg-white hover:bg-gray-50"
+                    className="flex items-center gap-2 p-2 border-2 border-black hover:bg-gray-50 bg-white"
                   >
                     <Checkbox
                       checked={todo.completed}
@@ -120,15 +215,23 @@ export function TodoPanel() {
                     >
                       {todo.text}
                     </span>
-                    <Button
-                      onClick={() => {
-                        if (todo.id) deleteTodo(todo.id)
-                      }}
-                      size="sm"
-                      className="h-6 w-6 p-0 hover:bg-red-400"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    
+                    {/* Sync status indicator - only show yellow dot for pending */}
+                    <div className="flex items-center gap-1">
+                      {(todo.syncStatus === 'pending' || todo.syncStatus === 'error') && (
+                        <div className="w-2 h-2 bg-yellow-500 rounded-full" title="Pending sync" />
+                      )}
+                      
+                      <Button
+                        onClick={() => {
+                          if (todo.id) deleteTodo(todo.id)
+                        }}
+                        size="sm"
+                        className="h-6 w-6 p-0 hover:bg-red-400"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 ))
               )}
