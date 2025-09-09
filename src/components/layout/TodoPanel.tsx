@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Plus, Trash2, RefreshCw } from "lucide-react"
+import { Plus, Trash2 } from "lucide-react"
 import Star10 from "@/components/stars/s10"
 import { TodoService } from "@/lib/database-service"
 import type { Todo } from "@/lib/types"
@@ -133,21 +133,7 @@ export function TodoPanel() {
             <Star10 size={20} color="#000" />
             TODOS
           </div>
-          <div className="flex items-center gap-2">
-            {/* Sync button - no connectivity indicator here anymore */}
-            <Button
-              onClick={handleManualSync}
-              disabled={!isOnline || syncing}
-              size="sm"
-              className="h-6 w-6 p-0 border border-black hover:bg-blue-400 disabled:opacity-50"
-              title={isOnline ? "Sync with server" : "Offline - cannot sync"}
-            >
-              <RefreshCw 
-                size={12} 
-                className={syncing ? "animate-spin" : ""} 
-              />
-            </Button>
-          </div>
+
         </CardTitle>
       </CardHeader>
       <CardContent className="p-3 h-[calc(100%-4rem)]">
