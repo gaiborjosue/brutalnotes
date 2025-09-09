@@ -269,7 +269,8 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         await refreshFileTree()
         // Auto-start renaming the new note
         if (result.data?.id) {
-          setEditingFile(result.data.id.toString())
+          const newId = result.data.id
+          setEditingFile(newId.toString())
           // Remove .lexical for editing (user will see clean name)
           setEditingName(noteName.replace('.lexical', ''))
           
@@ -278,7 +279,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
           setTimeout(() => {
             if (onFileClick) {
               console.log('📖 Auto-opening newly created file in editor')
-              onFileClick(result.data.id)
+              onFileClick(newId)
             }
           }, 100)
         }
@@ -407,23 +408,8 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
               autoFocus
             />
           ) : (
-            <span className="text-xs font-mono text-black flex-1 break-words leading-tight">
-              {/* Mobile-friendly filename display */}
-              <span className="block md:hidden">
-                {node.name.length > 15 ? (
-                  <>
-                    {node.name.substring(0, 12)}
-                    <br />
-                    {node.name.substring(12)}
-                  </>
-                ) : (
-                  node.name
-                )}
-              </span>
-              {/* Desktop filename display */}
-              <span className="hidden md:block truncate">
-                {node.name}
-              </span>
+            <span className="text-xs font-mono text-black flex-1 w-0 leading-tight" title={node.name}>
+              <span className="block truncate">{node.name}</span>
             </span>
           )}
           
@@ -432,7 +418,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
               <PopoverTrigger asChild>
                   <Button 
                   size="sm" 
-                  className="h-6 w-6 p-0 hover:bg-blue-300 border-2 border-black bg-white"
+                  className="h-6 w-6 p-0 hover:bg-blue-300 border-2 border-black bg-white shrink-0"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="h-3 w-3" />
