@@ -9,9 +9,11 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary"
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin"
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin"
+import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
 import { HeadingNode, QuoteNode } from "@lexical/rich-text"
 import { ParagraphNode, TextNode, type SerializedEditorState } from "lexical"
 import { ListItemNode, ListNode } from "@lexical/list"
+import { TableCellNode, TableNode, TableRowNode } from "@lexical/table"
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin"
 import { CodeHighlightNode, CodeNode } from "@lexical/code"
 import { AutoLinkNode, LinkNode } from "@lexical/link"
@@ -40,6 +42,9 @@ import { CollapsiblePlugin } from "@/components/editor/plugins/collapsible-plugi
 import { ExcalidrawPlugin } from "@/components/editor/plugins/excalidraw-plugin"
 import { ImagesPlugin } from "@/components/editor/plugins/images-plugin"
 import { PageBreakPlugin } from "@/components/editor/plugins/page-break-plugin"
+import { TableActionMenuPlugin } from "@/components/editor/plugins/table-action-menu-plugin"
+import { TableCellResizerPlugin } from "@/components/editor/plugins/table-cell-resizer-plugin"
+import { TableHoverActionsPlugin } from "@/components/editor/plugins/table-hover-actions-plugin"
 import { ContentEditable } from "@/components/editor/editor-ui/content-editable"
 import { ToolbarPlugin } from "@/components/editor/plugins/toolbar/toolbar-plugin"
 import { HistoryToolbarPlugin } from "@/components/editor/plugins/toolbar/history-toolbar-plugin"
@@ -115,6 +120,9 @@ const editorConfig: InitialConfigType = {
     ExcalidrawNode,
     ImageNode,
     PageBreakNode,
+    TableNode,
+    TableRowNode,
+    TableCellNode,
   ],
   onError: (error: Error) => {
     console.error(error)
@@ -299,6 +307,12 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
         
         {/* Page Break Plugin */}
         <PageBreakPlugin />
+        
+        {/* Table Plugins */}
+        <TablePlugin />
+        <TableActionMenuPlugin anchorElem={contentEditableRef.current} />
+        <TableCellResizerPlugin />
+        <TableHoverActionsPlugin anchorElem={contentEditableRef.current} />
         
         {/* Unsaved Changes Plugin */}
         <UnsavedChangesPlugin

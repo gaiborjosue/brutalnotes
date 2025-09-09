@@ -480,13 +480,19 @@ function TableActionMenu({
   if (cellMerge) {
     if (canMergeCells) {
       mergeCellButton = (
-        <CommandItem onSelect={() => mergeTableCellsAtSelection()}>
+        <CommandItem 
+          onSelect={() => mergeTableCellsAtSelection()}
+          className="hover:bg-blue-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+        >
           Merge cells
         </CommandItem>
       )
     } else if (canUnmergeCell) {
       mergeCellButton = (
-        <CommandItem onSelect={() => unmergeTableCellsAtSelection()}>
+        <CommandItem 
+          onSelect={() => unmergeTableCellsAtSelection()}
+          className="hover:bg-blue-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+        >
           Unmerge cells
         </CommandItem>
       )
@@ -500,7 +506,7 @@ function TableActionMenu({
         <CommandList>
           <CommandGroup>
             {mergeCellButton}
-            <CommandItem className="flex justify-between">
+            <CommandItem className="flex justify-between hover:bg-blue-400 hover:text-black font-mono font-bold cursor-pointer transition-colors">
               Background color
               <ColorPicker
                 color={backgroundColor}
@@ -508,18 +514,27 @@ function TableActionMenu({
                 icon={<PaintBucketIcon className="size-4" />}
               />
             </CommandItem>
-            <CommandItem onSelect={() => toggleRowStriping()}>
+            <CommandItem 
+              onSelect={() => toggleRowStriping()}
+              className="hover:bg-blue-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+            >
               Toggle row striping
             </CommandItem>
             <CommandSeparator />
-            <CommandItem onSelect={() => insertTableRowAtSelection(false)}>
+            <CommandItem 
+              onSelect={() => insertTableRowAtSelection(false)}
+              className="hover:bg-blue-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+            >
               Insert{" "}
               {selectionCounts.rows === 1
                 ? "row"
                 : `${selectionCounts.rows} rows`}{" "}
               above
             </CommandItem>
-            <CommandItem onSelect={() => insertTableRowAtSelection(true)}>
+            <CommandItem 
+              onSelect={() => insertTableRowAtSelection(true)}
+              className="hover:bg-blue-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+            >
               Insert{" "}
               {selectionCounts.rows === 1
                 ? "row"
@@ -527,14 +542,20 @@ function TableActionMenu({
               below
             </CommandItem>
             <CommandSeparator />
-            <CommandItem onSelect={() => insertTableColumnAtSelection(false)}>
+            <CommandItem 
+              onSelect={() => insertTableColumnAtSelection(false)}
+              className="hover:bg-blue-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+            >
               Insert{" "}
               {selectionCounts.columns === 1
                 ? "column"
                 : `${selectionCounts.columns} columns`}{" "}
               left
             </CommandItem>
-            <CommandItem onSelect={() => insertTableColumnAtSelection(true)}>
+            <CommandItem 
+              onSelect={() => insertTableColumnAtSelection(true)}
+              className="hover:bg-blue-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+            >
               Insert{" "}
               {selectionCounts.columns === 1
                 ? "column"
@@ -542,24 +563,39 @@ function TableActionMenu({
               right
             </CommandItem>
             <CommandSeparator />
-            <CommandItem onSelect={() => deleteTableColumnAtSelection()}>
+            <CommandItem 
+              onSelect={() => deleteTableColumnAtSelection()}
+              className="hover:bg-red-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+            >
               Delete column
             </CommandItem>
-            <CommandItem onSelect={() => deleteTableRowAtSelection()}>
+            <CommandItem 
+              onSelect={() => deleteTableRowAtSelection()}
+              className="hover:bg-red-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+            >
               Delete row
             </CommandItem>
-            <CommandItem onSelect={() => deleteTableAtSelection()}>
+            <CommandItem 
+              onSelect={() => deleteTableAtSelection()}
+              className="hover:bg-red-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+            >
               Delete table
             </CommandItem>
             <CommandSeparator />
-            <CommandItem onSelect={() => toggleTableRowIsHeader()}>
+            <CommandItem 
+              onSelect={() => toggleTableRowIsHeader()}
+              className="hover:bg-green-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+            >
               {(tableCellNode.__headerState & TableCellHeaderStates.ROW) ===
               TableCellHeaderStates.ROW
                 ? "Remove"
                 : "Add"}{" "}
               row header
             </CommandItem>
-            <CommandItem onSelect={() => toggleTableColumnIsHeader()}>
+            <CommandItem 
+              onSelect={() => toggleTableColumnIsHeader()}
+              className="hover:bg-green-400 hover:text-black font-mono font-bold cursor-pointer transition-colors"
+            >
               {(tableCellNode.__headerState & TableCellHeaderStates.COLUMN) ===
               TableCellHeaderStates.COLUMN
                 ? "Remove"
@@ -694,7 +730,7 @@ function TableCellActionMenuContainer({
               <ChevronDownIcon className="h-4 w-4" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-[200px] p-0">
+          <PopoverContent className="w-[200px] p-0 bg-white border-4 border-black shadow-[8px_8px_0px_0px_#000]">
             <TableActionMenu
               contextRef={menuRootRef}
               setIsMenuOpen={setIsMenuOpen}
