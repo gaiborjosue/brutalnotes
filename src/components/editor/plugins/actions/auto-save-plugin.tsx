@@ -147,7 +147,7 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
       if (result.success) {
         setLastSaveTime(new Date())
         onFileSaved?.() // Refresh file tree
-        console.log('💾 Auto-saved successfully')
+        console.log('💾 Auto-saved locally (sync will happen in ~3s if online)')
       } else {
         console.error('❌ Auto-save failed:', result.error)
       }
@@ -177,8 +177,8 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
         clearTimeout(saveTimeoutRef.current)
       }
 
-      // Set minimal timeout for auto-save (100ms after last change to batch rapid typing)
-      // This includes saving empty content when user clears everything
+      // Set minimal timeout for local auto-save (100ms after last change to batch rapid typing)
+      // This saves to IndexedDB immediately for instant UX, sync to server happens separately
       saveTimeoutRef.current = setTimeout(() => {
         autoSave()
       }, 100)
@@ -257,7 +257,7 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
               </>
             ) : isAutoSaveEnabled ? (
               <>
-                Saves instantly on every edit to temp folder
+                Saves locally instantly, syncs to server in 3s
                 <br />
                 Last saved: {formatLastSaveTime()}
                 <br />

@@ -10,7 +10,7 @@ import { PomodoroPanel } from "./PomodoroPanel"
 import { BrutalEditor } from "./BrutalEditor"
 import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-changes-dialog"
 import { NoteService } from "@/lib/database-service"
-import { Camera, Menu, LogOut } from "lucide-react"
+import { Camera, Menu, LogOut, Wifi, WifiOff } from "lucide-react"
 import Star24 from "@/components/stars/s24"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -20,6 +20,7 @@ export function MainLayout() {
   const [loadFileContent, setLoadFileContent] = useState<((content: string, fileId: number) => void) | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [currentFileId, setCurrentFileId] = useState<number | null>(null)
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
   
   
   // Unsaved changes management
@@ -28,6 +29,20 @@ export function MainLayout() {
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
   const [actionDescription, setActionDescription] = useState("")
+
+  // Listen for online/offline status changes
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   const handleCameraCapture = () => {
     alert("📸 Camera feature coming soon! This will allow you to capture paper notes and convert them to digital text.")
@@ -254,6 +269,26 @@ export function MainLayout() {
                     BRUTAL NOTES
                   </div>
                   <div className="flex items-center gap-2">
+                    {/* Connectivity Status - subtle and contextual */}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center">
+                            {isOnline ? (
+                              <Wifi size={16} className="text-green-600 mr-2" />
+                            ) : (
+                              <WifiOff size={16} className="text-red-600 mr-2" />
+                            )}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="font-mono font-black">
+                            {isOnline ? "ONLINE - Auto-sync active" : "OFFLINE - Changes saved locally"}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
                     {/* User Info */}
                     <div className="hidden sm:block text-sm font-bold text-gray-700 mr-2">
                       {user?.email}

@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { AuthContainer } from './components/auth/AuthContainer'
 import { AuthLoader } from './components/auth/AuthLoader'
 import SyncService from './lib/sync-service'
+import NotesSyncService from './lib/notes-sync-service'
 
 // Protected App Component (only renders when authenticated)
 function ProtectedApp() {
@@ -25,9 +26,10 @@ function ProtectedApp() {
       if (result.success) {
         console.log('✅ Database initialized successfully')
         
-        // Setup automatic sync after database is ready
+        // Setup automatic sync for both todos and notes after database is ready
         console.log('🔄 Setting up automatic sync...')
         SyncService.setupAutoSync()
+        NotesSyncService.setupAutoSync()
         
         setIsDbInitialized(true)
       } else {

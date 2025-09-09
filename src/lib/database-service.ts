@@ -2,6 +2,7 @@
 
 import { db } from './database'
 import SyncService from './sync-service'
+import NotesSyncService from './notes-sync-service'
 import type { Todo, Note, FileNode, DatabaseResult } from './types'
 
 // =================
@@ -184,7 +185,7 @@ class TodoService {
       // Remove todos that are deleted and synced (or don't have server IDs)
       await db.todos
         .where('deleted')
-        .equals(true)
+        .equals(1 as any) // Dexie needs IndexableType, not boolean
         .and(todo => !todo.serverId || todo.syncStatus === 'synced')
         .delete()
       
@@ -244,7 +245,13 @@ class NoteService {
       }
       
       const id = await db.notes.add(noteData)
+      
+      // Update the note with clientId (using the Dexie auto-generated ID)
+      await db.notes.update(id, { clientId: id })
       const note = await db.notes.get(id)
+      
+      // Trigger async sync (don't wait for it to complete)
+      this.triggerNotesSync()
       
       return { success: true, data: note }
     } catch (error) {
@@ -255,8 +262,20 @@ class NoteService {
   // Update note content
   static async updateNote(id: number, updates: Partial<Note>): Promise<DatabaseResult<Note>> {
     try {
-      await db.notes.update(id, updates)
+      // Always mark as pending when updating locally (unless explicitly set to synced)
+      const updateData = { 
+        ...updates, 
+        updatedAt: new Date(),
+        syncStatus: updates.syncStatus || 'pending'
+      }
+      
+      await db.notes.update(id, updateData)
       const note = await db.notes.get(id)
+      
+      // Only trigger sync if the note was marked as pending (not for manual sync status updates)
+      if (updateData.syncStatus === 'pending') {
+        this.triggerNotesSync()
+      }
       
       return { success: true, data: note }
     } catch (error) {
@@ -264,12 +283,16 @@ class NoteService {
     }
   }
 
-  // Delete note
+  // Delete note (instant UI removal with background sync)
   static async deleteNote(id: number): Promise<DatabaseResult<void>> {
     try {
-      // If it's a folder, delete all children first
       const note = await db.notes.get(id)
-      if (note?.isFolder) {
+      if (!note) {
+        return { success: false, error: 'Note not found' }
+      }
+
+      // If it's a folder, delete all children first (recursively)
+      if (note.isFolder) {
         const children = await db.notes.where('parentId').equals(id).toArray()
         for (const child of children) {
           if (child.id) {
@@ -278,7 +301,22 @@ class NoteService {
         }
       }
       
-      await db.notes.delete(id)
+      if (note.serverId) {
+        // Note exists on server - mark as deleted immediately for instant UI feedback
+        await db.notes.update(id, { 
+          deleted: true, 
+          syncStatus: 'pending',
+          updatedAt: new Date()
+        })
+        
+        // Trigger background sync to delete from server
+        // This will cleanup the local record after successful server deletion
+        this.triggerNotesSync()
+      } else {
+        // Local-only note - hard delete immediately
+        await db.notes.delete(id)
+      }
+      
       return { success: true }
     } catch (error) {
       return { success: false, error: String(error) }
@@ -289,7 +327,11 @@ class NoteService {
   static async buildFileTree(): Promise<DatabaseResult<FileNode[]>> {
     try {
       // Order by: folders first, then temp folder first, then by creation date
-      const notes = await db.notes.orderBy('createdAt').toArray()
+      // Only get non-deleted notes for the UI
+      const notes = await db.notes
+        .orderBy('createdAt')
+        .filter(note => !note.deleted)
+        .toArray()
       // Sort to put temp folder first, then other folders, then files
       notes.sort((a, b) => {
         // Temp folder always first
@@ -352,7 +394,7 @@ class NoteService {
     }
   }
 
-  // Auto-save current note (for editor)
+  // Auto-save current note (for editor) - with smart sync debouncing
   static async autoSaveNote(id: number, content: string): Promise<DatabaseResult<void>> {
     try {
       await db.notes.update(id, { 
@@ -360,8 +402,69 @@ class NoteService {
         updatedAt: new Date(),
         syncStatus: 'pending'
       })
+      
+      // Trigger smart sync for auto-save (longer debounce)
+      this.triggerNotesSync(true) // true = auto-save mode (longer delay)
+      
       return { success: true }
     } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  }
+
+  // =================
+  // NOTES SYNC HELPERS
+  // =================
+
+  // Trigger background notes sync (debounced)
+  private static notesSyncTimeout: NodeJS.Timeout | null = null
+  private static triggerNotesSync(autoSaveMode: boolean = false): void {
+    // Clear existing timeout to debounce rapid operations
+    if (this.notesSyncTimeout) {
+      clearTimeout(this.notesSyncTimeout)
+    }
+    
+    // Use different delays for different scenarios
+    const delay = autoSaveMode 
+      ? 3000 // 3 seconds for auto-save (batch multiple edits)
+      : 2000 // 2 seconds for manual operations
+    
+    // Sync after specified delay of inactivity
+    this.notesSyncTimeout = setTimeout(async () => {
+      if (navigator.onLine) {
+        try {
+          console.log('🔄 Triggering background notes sync...')
+          await NotesSyncService.syncNotes()
+          
+          // Emit a custom event to notify UI components to refresh
+          console.log('🔔 Emitting notesSynced event for UI refresh')
+          window.dispatchEvent(new CustomEvent('notesSynced'))
+        } catch (error) {
+          console.error('Background notes sync failed:', error)
+        }
+      }
+    }, delay)
+  }
+
+  // Manual sync method for user-triggered syncs
+  static async syncNotes(): Promise<DatabaseResult<void>> {
+    try {
+      const result = await NotesSyncService.performFullSync()
+      
+      if (result.success) {
+        console.log(`✅ Manual notes sync successful: ${result.syncedCount} items synced`)
+        
+        // Notify UI to refresh
+        console.log('🔔 Manual notes sync complete - emitting notesSynced event')
+        window.dispatchEvent(new CustomEvent('notesSynced'))
+        
+        return { success: true }
+      } else {
+        console.error('Manual notes sync failed:', result.errors)
+        return { success: false, error: result.errors.join(', ') }
+      }
+    } catch (error) {
+      console.error('Manual notes sync error:', error)
       return { success: false, error: String(error) }
     }
   }
