@@ -9,6 +9,20 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@excalidraw/excalidraw/types": path.resolve(__dirname, "./node_modules/@excalidraw/excalidraw/types/types.d.ts"),
     },
   },
+  optimizeDeps: {
+    include: ["@excalidraw/excalidraw"],
+    force: true
+  },
+  build: {
+    commonjsOptions: {
+      include: [/excalidraw/, /node_modules/],
+      transformMixedEsModules: true
+    },
+  },
+  define: {
+    global: 'globalThis',
+  }
 })
