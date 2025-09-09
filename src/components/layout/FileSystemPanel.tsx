@@ -42,10 +42,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   // Load file tree from database
   useEffect(() => {
     const loadFileTree = async () => {
-      // First ensure temp folder exists
-      await ensureTempFolder()
-      
-      // Then load the file tree
+      // Load the file tree (database initialization already handles default folders)
       const result = await NoteService.buildFileTree()
       if (result.success && result.data) {
         setFileTree(result.data)
@@ -58,23 +55,6 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     loadFileTree()
   }, [])
 
-  // Ensure temp folder exists in database
-  const ensureTempFolder = async () => {
-    try {
-      const allNotes = await NoteService.getAllNotes()
-      if (allNotes.success && allNotes.data) {
-        const tempFolder = allNotes.data.find(note => 
-          note.isFolder && note.title === 'temp' && note.path === '/temp'
-        )
-        
-        if (!tempFolder) {
-          await NoteService.createNote('temp', '', '/temp', true)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to ensure temp folder:', error)
-    }
-  }
 
   // Refresh file tree from database
   const refreshFileTree = async () => {
@@ -219,7 +199,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   // Create new note
   const createNewNote = async () => {
     try {
-      // Find temp folder
+      // Find temp folder (should always exist since database is initialized first)
       const allNotes = await NoteService.getAllNotes()
       let tempFolderId: number | undefined
 
@@ -228,6 +208,12 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
           note.isFolder && note.title === 'temp'
         )
         tempFolderId = tempFolder?.id
+      }
+
+      // Temp folder should always exist after database initialization
+      if (!tempFolderId) {
+        console.error('❌ Temp folder not found - database initialization may have failed')
+        return
       }
 
       // Create empty note with default content

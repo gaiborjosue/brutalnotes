@@ -16,7 +16,8 @@ interface AutoSavePluginProps {
 
 export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSavedFileChange }: AutoSavePluginProps) {
   const [editor] = useLexicalComposerContext()
-  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(true) // Default enabled
+  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false) // Default disabled until user types
+  const [userHasTyped, setUserHasTyped] = useState(false) // Track if user has started typing
   const [isAutoSaving, setIsAutoSaving] = useState(false)
   const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -77,7 +78,7 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
         return
       }
 
-      // Find temp folder first
+      // Find temp folder (should always exist since database is initialized first)
       const allNotes = await NoteService.getAllNotes()
       let tempFolderId: number | undefined
 
@@ -88,12 +89,11 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
         tempFolderId = tempFolder?.id
       }
 
-      // If no temp folder, create it
+      // Temp folder should always exist after database initialization
       if (!tempFolderId) {
-        const tempResult = await NoteService.createNote('temp', '', '/temp', true)
-        if (tempResult.success && tempResult.data) {
-          tempFolderId = tempResult.data.id
-        }
+        console.error('❌ Temp folder not found - database initialization may have failed')
+        setIsAutoSaving(false)
+        return
       }
 
       let result
@@ -138,9 +138,25 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
     }
   }, [editor, isAutoSaveEnabled, onFileSaved, onAutoSavedFileChange])
 
-  // Instant auto-save effect with minimal throttle to prevent excessive saves
+  // Detect when user starts typing and enable auto-save
   useEffect(() => {
-    if (!isAutoSaveEnabled) return
+    const editorState = editor.getEditorState()
+    const contentJson = JSON.stringify(editorState.toJSON())
+    
+    // Check if editor has meaningful content (not just empty paragraph)
+    const hasContent = !contentJson.includes('"children":[]') || 
+                      contentJson.split('"type":"paragraph"').length > 2 ||
+                      contentJson.includes('"text":') // Any text content
+    
+    if (hasContent && !userHasTyped) {
+      // User has started typing for the first time
+      setUserHasTyped(true)
+      setIsAutoSaveEnabled(true)
+      console.log('🔥 User started typing - Auto-save enabled!')
+    }
+    
+    // Only run auto-save if enabled and user has typed
+    if (!isAutoSaveEnabled || !userHasTyped) return
 
     // Clear existing timeout
     if (saveTimeoutRef.current) {
@@ -157,7 +173,7 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
         clearTimeout(saveTimeoutRef.current)
       }
     }
-  }, [editor.getEditorState(), autoSave])
+  }, [editor.getEditorState(), autoSave, userHasTyped, isAutoSaveEnabled])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -169,11 +185,17 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
   }, [])
 
   const toggleAutoSave = () => {
-    setIsAutoSaveEnabled(!isAutoSaveEnabled)
-    if (isAutoSaveEnabled) {
-      // If disabling, clear any pending auto-save
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current)
+    if (!userHasTyped) {
+      // If user hasn't typed yet, just toggle the preference
+      setIsAutoSaveEnabled(!isAutoSaveEnabled)
+    } else {
+      // If user has typed, allow manual toggle
+      setIsAutoSaveEnabled(!isAutoSaveEnabled)
+      if (isAutoSaveEnabled) {
+        // If disabling, clear any pending auto-save
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current)
+        }
       }
     }
   }
@@ -214,7 +236,9 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
         <div className="text-center">
           <div className="font-black">AUTO-SAVE {isAutoSaveEnabled ? 'ENABLED' : 'DISABLED'}</div>
           <div className="text-xs mt-1">
-            {isAutoSaveEnabled ? (
+            {!userHasTyped ? (
+              'Will auto-enable when you start typing'
+            ) : isAutoSaveEnabled ? (
               <>
                 Saves instantly on every edit to temp folder
                 <br />

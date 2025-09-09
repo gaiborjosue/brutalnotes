@@ -23,7 +23,9 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog"
+import { VisuallyHidden } from "@/components/ui/visually-hidden"
 
 import "@excalidraw/excalidraw/index.css"
 
@@ -185,6 +187,9 @@ export function ExcalidrawModal({
     return (
       <Dialog open={discardModalOpen} onOpenChange={setDiscardModalOpen}>
         <DialogContent>
+          <VisuallyHidden>
+            <DialogTitle>Discard Changes</DialogTitle>
+          </VisuallyHidden>
           Are you sure you want to discard the changes?
         </DialogContent>
         <DialogClose asChild>
@@ -224,6 +229,9 @@ export function ExcalidrawModal({
         showCloseButton={false}
         className="h-[100vh] w-[100vw] max-w-[100vw] !max-w-none overflow-hidden p-0 pb-10 m-0 !top-0 !left-0 !translate-x-0 !translate-y-0 fixed inset-0"
       >
+        <VisuallyHidden>
+          <DialogTitle>Excalidraw Drawing Canvas</DialogTitle>
+        </VisuallyHidden>
         <div className="relative" role="dialog">
           <div className="h-full w-full" ref={excaliDrawModelRef} tabIndex={-1}>
             {discardModalOpen && <ShowDiscardDialog />}

@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { TodoPanel } from "./TodoPanel"
 import { FileSystemPanel } from "./FileSystemPanel"
 import { PomodoroPanel } from "./PomodoroPanel"
@@ -95,6 +96,9 @@ export function MainLayout() {
                         side="left" 
                         className="w-96 border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white p-4"
                       >
+                        <VisuallyHidden>
+                          <SheetTitle>Navigation Menu</SheetTitle>
+                        </VisuallyHidden>
                         <div className="h-full pt-4">
                           {renderSidebarPanels()}
                         </div>
