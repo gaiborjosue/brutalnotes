@@ -10,13 +10,16 @@ import { BrutalEditor } from "./BrutalEditor"
 import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-changes-dialog"
 import { useRef, useState, useCallback } from "react"
 import { NoteService } from "@/lib/database-service"
-import { Camera, Menu } from "lucide-react"
+import { Camera, Menu, LogOut } from "lucide-react"
 import Star24 from "@/components/stars/s24"
+import { useAuth } from "@/contexts/AuthContext"
 
 export function MainLayout() {
+  const { user, signOut } = useAuth()
   const fileSystemRef = useRef<{ refreshFileTree: () => Promise<void> } | null>(null)
   const [loadFileContent, setLoadFileContent] = useState<((content: string, fileId: number) => void) | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [currentFileId, setCurrentFileId] = useState<number | null>(null)
   
   // Unsaved changes management
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -46,6 +49,15 @@ export function MainLayout() {
     setUnsavedSaveFunction(() => saveFunction)
   }, [])
 
+  // Handle auto-saved file changes to track current file
+  const handleAutoSavedFileChange = useCallback((fileId: number | null) => {
+    if (fileId) {
+      setCurrentFileId(fileId) // Track auto-saved files as current
+      // Refresh file tree to show the newly created auto-saved file
+      fileSystemRef.current?.refreshFileTree()
+    }
+  }, [])
+
   // Check for unsaved changes before performing an action
   const checkUnsavedChanges = (action: () => void, description: string) => {
     if (hasUnsavedChanges && unsavedSaveFunction) {
@@ -66,6 +78,7 @@ export function MainLayout() {
           const result = await NoteService.getNoteById(noteId)
           if (result.success && result.data) {
             loadFileContent(result.data.content, noteId)
+            setCurrentFileId(noteId) // Track the currently opened file
           } else {
             console.error('Failed to load file:', result.error)
           }
@@ -116,6 +129,7 @@ export function MainLayout() {
           onNewFileClick={(createFileAction) => {
             checkUnsavedChanges(createFileAction, "create a new file")
           }}
+          currentFileId={currentFileId}
         />
       </div>
       
@@ -167,23 +181,49 @@ export function MainLayout() {
                     <Star24 size={32} color="#000" />
                     BRUTAL NOTES
                   </div>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          onClick={handleCameraCapture}
-                          className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-purple-400 hover:bg-purple-500 text-black font-black brutal-hover h-8 px-4"
-                          size="sm"
-                        >
-                          <Camera className="h-4 w-4" />
-                          <span className="hidden sm:inline ml-2">Scan Notes</span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="font-mono font-black">PAPER → DIGITAL</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <div className="flex items-center gap-2">
+                    {/* User Info */}
+                    <div className="hidden sm:block text-sm font-bold text-gray-700 mr-2">
+                      {user?.email}
+                    </div>
+                    
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            onClick={handleCameraCapture}
+                            className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-purple-400 hover:bg-purple-500 text-black font-black brutal-hover h-8 px-4"
+                            size="sm"
+                          >
+                            <Camera className="h-4 w-4" />
+                            <span className="hidden md:inline ml-2">Scan Notes</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="font-mono font-black">PAPER → DIGITAL</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
+                    {/* Logout Button */}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            onClick={() => signOut()}
+                            className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-red-400 hover:bg-red-500 text-black font-black brutal-hover h-8 px-4"
+                            size="sm"
+                          >
+                            <LogOut className="h-4 w-4" />
+                            <span className="hidden md:inline ml-2">Logout</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="font-mono font-black">SIGN OUT</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0 h-[calc(100%-5rem)] relative overflow-hidden">
@@ -193,6 +233,7 @@ export function MainLayout() {
                            onFileSaved={handleFileSaved} 
                            onLoadFile={handleLoadFile}
                            onUnsavedChangesWarning={handleUnsavedChangesWarning}
+                           onAutoSavedFileChange={handleAutoSavedFileChange}
                          />
                        </div>
               </CardContent>

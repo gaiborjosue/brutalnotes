@@ -95,14 +95,8 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
       const editorState = editor.getEditorState()
       const contentJson = JSON.stringify(editorState.toJSON())
 
-      // Check if content is empty (just empty paragraph)
-      const isEmpty = contentJson.includes('"children":[]') && 
-                     contentJson.split('"type":"paragraph"').length <= 2
-
-      if (isEmpty) {
-        setIsAutoSaving(false)
-        return
-      }
+      // Note: We removed the empty content check because clearing content is also a valid save action
+      // Users should be able to save empty notes when they clear content
 
       // Find temp folder (should always exist since database is initialized first)
       const allNotes = await NoteService.getAllNotes()
@@ -164,42 +158,34 @@ export function AutoSavePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
     }
   }, [editor, isAutoSaveEnabled, onFileSaved, onAutoSavedFileChange])
 
-  // Detect when user starts typing and enable auto-save
+  // Auto-save effect - triggers on every editor content change
   useEffect(() => {
-    const editorState = editor.getEditorState()
-    const contentJson = JSON.stringify(editorState.toJSON())
-    
-    // Check if editor has meaningful content (not just empty paragraph)
-    const hasContent = !contentJson.includes('"children":[]') || 
-                      contentJson.split('"type":"paragraph"').length > 2 ||
-                      contentJson.includes('"text":') // Any text content
-    
-    if (hasContent && !userHasTyped) {
-      // User has started typing for the first time
-      setUserHasTyped(true)
-      // Don't automatically enable auto-save - respect user's saved preference
-      console.log('🔥 User started typing - Auto-save preference:', isAutoSaveEnabled ? 'enabled' : 'disabled')
-    }
-    
-    // Only run auto-save if enabled and user has typed
-    if (!isAutoSaveEnabled || !userHasTyped) return
+    if (!editor) return
 
-    // Clear existing timeout
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
-    }
+    const unregister = editor.registerUpdateListener(({ editorState }) => {
+      // Mark that user has interacted with the editor (any change, including clearing content)
+      if (!userHasTyped) {
+        setUserHasTyped(true)
+        console.log('🔥 User started editing - Auto-save preference:', isAutoSaveEnabled ? 'enabled' : 'disabled')
+      }
+      
+      // Only run auto-save if enabled and user has interacted with editor
+      if (!isAutoSaveEnabled) return
 
-    // Set minimal timeout for auto-save (100ms after last change to batch rapid typing)
-    saveTimeoutRef.current = setTimeout(() => {
-      autoSave()
-    }, 100)
-
-    return () => {
+      // Clear existing timeout
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
-    }
-  }, [editor.getEditorState(), autoSave, userHasTyped, isAutoSaveEnabled])
+
+      // Set minimal timeout for auto-save (100ms after last change to batch rapid typing)
+      // This includes saving empty content when user clears everything
+      saveTimeoutRef.current = setTimeout(() => {
+        autoSave()
+      }, 100)
+    })
+
+    return unregister
+  }, [editor, isAutoSaveEnabled, autoSave])
 
   // Cleanup on unmount
   useEffect(() => {
