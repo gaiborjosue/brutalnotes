@@ -306,7 +306,7 @@ export function MainLayout() {
                             <span className="hidden md:inline ml-2">Scan Notes</span>
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>
+                        <TooltipContent side="bottom" avoidCollisions={false} sideOffset={4}>
                           <p className="font-mono font-black">PAPER → DIGITAL</p>
                         </TooltipContent>
                       </Tooltip>
@@ -325,7 +325,7 @@ export function MainLayout() {
                             <span className="hidden md:inline ml-2">Logout</span>
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>
+                        <TooltipContent side="bottom" avoidCollisions={false} sideOffset={4}>
                           <p className="font-mono font-black">SIGN OUT</p>
                         </TooltipContent>
                       </Tooltip>
