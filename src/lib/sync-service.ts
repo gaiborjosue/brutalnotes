@@ -251,6 +251,7 @@ class SyncService {
       // any todo we receive from server is guaranteed to be active
       await db.todos.add({
         serverId: String(serverId),
+        clientId: serverTodo.clientId, // Include clientId for proper sync mapping
         text: serverTodo.text,
         completed: serverTodo.completed,
         createdAt: new Date(serverTodo.createdAt),
@@ -330,7 +331,16 @@ class SyncService {
   static setupAutoSync(): void {
     // Sync on page load if online
     if (this.isOnline()) {
-      setTimeout(() => this.performFullSync(), 2000) // 2 second delay
+      setTimeout(async () => {
+        try {
+          await this.performFullSync()
+          // Emit event to refresh UI after auto-sync
+          console.log('🔔 Auto-sync completed - emitting todosSynced event')
+          window.dispatchEvent(new CustomEvent('todosSynced'))
+        } catch (error) {
+          console.error('Auto-sync on page load failed:', error)
+        }
+      }, 2000) // 2 second delay
     }
 
     // Listen for online/offline events
@@ -341,14 +351,21 @@ class SyncService {
         console.log('🔄 Network should be stable now, attempting sync...')
         try {
           await this.performFullSync()
+          // Emit event to refresh UI after coming online sync
+          console.log('🔔 Online sync completed - emitting todosSynced event')
+          window.dispatchEvent(new CustomEvent('todosSynced'))
         } catch (error) {
           console.warn('Sync after coming online failed:', error)
           // Retry once more after additional delay
-          setTimeout(() => {
+          setTimeout(async () => {
             console.log('🔄 Retrying sync...')
-            this.performFullSync().catch(err => 
-              console.error('Retry sync also failed:', err)
-            )
+            try {
+              await this.performFullSync()
+              console.log('🔔 Retry sync completed - emitting todosSynced event')
+              window.dispatchEvent(new CustomEvent('todosSynced'))
+            } catch (retryError) {
+              console.error('Retry sync also failed:', retryError)
+            }
           }, 5000)
         }
       }, 3000) // Increased from 1 second to 3 seconds
@@ -365,6 +382,9 @@ class SyncService {
         try {
           console.log('⏰ Performing periodic sync...')
           await this.performFullSync()
+          // Emit event to refresh UI after periodic sync
+          console.log('🔔 Periodic sync completed - emitting todosSynced event')
+          window.dispatchEvent(new CustomEvent('todosSynced'))
         } catch (error) {
           console.warn('Periodic sync failed (this is normal):', error)
         }
