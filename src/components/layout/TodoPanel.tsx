@@ -39,13 +39,20 @@ export function TodoPanel() {
     
     // Listen for sync completion to refresh UI
     const handleSyncCompleted = async () => {
-      console.log('🔄 Sync completed, refreshing todos...')
+      console.log('🔄 TodoPanel received todosSynced event - refreshing todos from database...')
       const result = await TodoService.getAllTodos()
       if (result.success && result.data) {
-        console.log(`📋 Refreshed ${result.data.length} todos from database`)
+        const todosWithStatus = result.data.map(t => ({
+          id: t.id, 
+          text: t.text?.slice(0, 20), 
+          syncStatus: t.syncStatus, 
+          serverId: t.serverId?.slice(0, 8)
+        }))
+        console.log(`📋 TodoPanel: Refreshed ${result.data.length} todos:`, todosWithStatus)
         setTodos(result.data)
+        console.log('✅ TodoPanel: UI state updated with fresh todos')
       } else {
-        console.error('Failed to refresh todos after sync:', result.error)
+        console.error('❌ TodoPanel: Failed to refresh todos after sync:', result.error)
       }
     }
     

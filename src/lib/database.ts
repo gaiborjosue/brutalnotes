@@ -12,10 +12,16 @@ export class BrutalNotesDB extends Dexie {
   constructor() {
     super('BrutalNotesDB')
     
-    // Define schema
+    // Define schema - Version 1 (original)
     this.version(1).stores({
       todos: '++id, serverId, text, completed, deleted, createdAt, updatedAt, syncStatus',
       notes: '++id, title, content, path, createdAt, updatedAt, syncStatus, isFolder, parentId'
+    })
+    
+    // Version 2 - Add serverId index to notes for sync functionality
+    this.version(2).stores({
+      todos: '++id, serverId, text, completed, deleted, createdAt, updatedAt, syncStatus',
+      notes: '++id, serverId, title, content, path, createdAt, updatedAt, syncStatus, isFolder, parentId'
     })
 
     // Add hooks for automatic timestamps

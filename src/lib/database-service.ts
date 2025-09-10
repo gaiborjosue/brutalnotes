@@ -141,14 +141,25 @@ class TodoService {
       if (navigator.onLine) {
         try {
           console.log('🔄 Triggering background sync...')
-          await SyncService.syncTodos()
+          const result = await SyncService.syncTodos()
           
-          // Emit a custom event to notify UI components to refresh
-          console.log('🔔 Emitting todosSynced event for UI refresh')
+          if (result.success) {
+            console.log('✅ Background sync successful')
+          } else {
+            console.error('❌ Background sync failed:', result.errors)
+            console.error('❌ This is why your todos aren\'t reaching the backend!')
+          }
+          
+          // Always emit refresh event after sync attempt (success or failure)
+          // This ensures UI stays in sync with local database state
+          console.log('🔔 Emitting todosSynced event for UI refresh (background sync)')
           window.dispatchEvent(new CustomEvent('todosSynced'))
         } catch (error) {
-          console.error('Background sync failed:', error)
+          console.error('💥 Background sync exception:', error)
+          console.error('💥 This might be an authentication issue!')
         }
+      } else {
+        console.warn('📵 Device offline - skipping sync')
       }
     }, 2000)
   }
@@ -164,13 +175,18 @@ class TodoService {
       if (result.success) {
         console.log(`✅ Manual sync successful: ${result.syncedCount} items synced`)
         
-        // Notify UI to refresh
+        // Always notify UI to refresh after sync attempt
         console.log('🔔 Manual sync complete - emitting todosSynced event')
         window.dispatchEvent(new CustomEvent('todosSynced'))
         
         return { success: true }
       } else {
         console.error('Manual sync failed:', result.errors)
+        
+        // Still refresh UI to show current local state
+        console.log('🔔 Manual sync failed but still emitting todosSynced for UI refresh')
+        window.dispatchEvent(new CustomEvent('todosSynced'))
+        
         return { success: false, error: result.errors.join(', ') }
       }
     } catch (error) {
@@ -203,6 +219,20 @@ class TodoService {
 class NoteService {
   // Get all notes
   static async getAllNotes(): Promise<DatabaseResult<Note[]>> {
+    try {
+      // Filter out deleted notes - only return active notes for UI
+      const notes = await db.notes
+        .orderBy('createdAt')
+        .filter(note => !note.deleted)
+        .toArray()
+      return { success: true, data: notes }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  }
+
+  // Get ALL notes including deleted ones (for sync purposes)
+  static async getAllNotesIncludingDeleted(): Promise<DatabaseResult<Note[]>> {
     try {
       const notes = await db.notes.orderBy('createdAt').toArray()
       return { success: true, data: notes }
@@ -303,6 +333,7 @@ class NoteService {
       
       if (note.serverId) {
         // Note exists on server - mark as deleted immediately for instant UI feedback
+        console.log(`🗑️ Marking note "${note.title}" as deleted locally, will sync to server`)
         await db.notes.update(id, { 
           deleted: true, 
           syncStatus: 'pending',
@@ -311,6 +342,7 @@ class NoteService {
         
         // Trigger background sync to delete from server
         // This will cleanup the local record after successful server deletion
+        console.log(`🔄 Triggering sync to delete note "${note.title}" on server`)
         this.triggerNotesSync()
       } else {
         // Local-only note - hard delete immediately

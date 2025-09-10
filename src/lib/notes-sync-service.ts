@@ -152,14 +152,19 @@ class NotesSyncService {
       throw new Error('Cannot delete note on server without server ID')
     }
 
+    console.log(`🗑️ Syncing deletion of note "${localNote.title}" to server (ID: ${localNote.serverId})`)
     const apiResult = await ApiService.deleteNote(localNote.serverId)
     
     if (!apiResult.success) {
+      console.error(`❌ Failed to delete note "${localNote.title}" on server:`, apiResult.error)
       throw new Error(apiResult.error || 'Failed to delete note on server')
     }
 
+    console.log(`✅ Successfully deleted note "${localNote.title}" on server`)
+
     // Delete from local database after successful server deletion
     if (localNote.id) {
+      console.log(`🧹 Cleaning up local record for deleted note "${localNote.title}"`)
       await db.notes.delete(localNote.id)
     }
   }
@@ -231,6 +236,12 @@ class NotesSyncService {
     const existingNote = await db.notes.where('serverId').equals(serverId).first()
 
     if (existingNote) {
+      // Don't overwrite local deletions that are pending sync
+      if (existingNote.deleted && existingNote.syncStatus === 'pending') {
+        console.log(`🚫 Skipping server update for locally deleted note: ${existingNote.title}`)
+        return
+      }
+      
       // Update existing local note if server version is newer
       const serverDate = new Date(serverNote.updatedAt)
       const localDate = new Date(existingNote.updatedAt)
@@ -244,7 +255,7 @@ class NotesSyncService {
           serverParentId: serverNote.serverParentId,
           updatedAt: serverDate,
           syncStatus: 'synced',
-          deleted: false // Ensure not marked as deleted since it came from server
+          deleted: false // Only set to false if not locally deleted
         })
       }
     } else {

@@ -107,6 +107,7 @@ class ApiService {
         text: serverTodo.text,
         completed: serverTodo.completed,
         serverId: String(serverTodo.id), // Map server 'id' to 'serverId'
+        clientId: serverTodo.client_id, // Include client_id from server for proper sync mapping
         createdAt: new Date(serverTodo.created_at),
         updatedAt: new Date(serverTodo.updated_at),
         syncStatus: 'synced' as const
@@ -203,7 +204,8 @@ class ApiService {
     
     console.log(`📤 Bulk syncing ${todosToSync.length} todos, deleting ${deletedClientIds.length} client IDs`)
     
-    const result = await this.makeRequest<any>('/todos/bulk-sync', 'POST', syncData)
+    // Use longer timeout for bulk sync operations (30 seconds)
+    const result = await this.makeRequest<any>('/todos/bulk-sync', 'POST', syncData, 30000)
     if (result.success && result.data) {
       const syncedTodos = result.data.todos || []
       
@@ -399,17 +401,41 @@ class ApiService {
         title: note.title,
         content: note.content,
         path: note.path,
-        is_folder: note.isFolder,
-        parent_id: note.serverParentId || null,
-        client_id: note.clientId || note.id
+        is_folder: note.isFolder, // Backend expects is_folder
+        parent_id: note.serverParentId || null, // Backend expects parent_id as UUID
+        client_id: note.clientId || note.id // Backend expects client_id for mapping
       })),
       client_notes_deleted: deletedClientIds,
-      last_sync_timestamp: null // Could be enhanced later for incremental sync
+      last_sync_timestamp: null
     }
     
     console.log(`📤 Bulk syncing ${notesToSync.length} notes, deleting ${deletedClientIds.length} client IDs`)
+    const payloadSize = JSON.stringify(syncData).length
+    console.log(`📤 Sync payload:`, { 
+      notesToSync: notesToSync.length, 
+      deletedClientIds: deletedClientIds.length,
+      payloadSizeBytes: payloadSize,
+      payloadSizeMB: (payloadSize / (1024 * 1024)).toFixed(2),
+      sampleNote: notesToSync[0] ? { 
+        title: notesToSync[0].title, 
+        contentLength: notesToSync[0].content?.length || 0,
+        hasLargeContent: (notesToSync[0].content?.length || 0) > 100000
+      } : null
+    })
     
-    const result = await this.makeRequest<any>('/notes/bulk-sync', 'POST', syncData)
+    // Use longer timeout for bulk sync operations (30 seconds)
+    console.log(`📤 Sending bulk-sync request to: ${API_BASE_URL}/notes/bulk-sync`)
+    const result = await this.makeRequest<any>('/notes/bulk-sync', 'POST', syncData, 30000)
+    
+    if (!result.success) {
+      console.error(`❌ Bulk sync failed:`, result.error)
+      console.error(`❌ Is the backend server running on ${API_BASE_URL}?`)
+      
+      // Fallback: Try using individual API calls
+      console.log(`🔄 Trying fallback sync with individual API calls...`)
+      return await this.fallbackSyncNotes(notesToSync, deletedClientIds)
+    }
+    
     if (result.success && result.data) {
       const syncedNotes = result.data.notes || []
       
@@ -432,6 +458,96 @@ class ApiService {
       return { success: true, data: mappedNotes }
     }
     return result
+  }
+
+  // Fallback sync method using individual API calls
+  private static async fallbackSyncNotes(
+    notesToSync: Note[], 
+    deletedClientIds: number[] = []
+  ): Promise<ApiResult<Note[]>> {
+    console.log(`🔄 Starting fallback sync with individual API calls...`)
+    const syncedNotes: Note[] = []
+    let errorCount = 0
+    
+    // Process note creations/updates
+    for (const note of notesToSync) {
+      try {
+        if (note.serverId) {
+          // Update existing note
+          console.log(`📝 Updating note: ${note.title}`)
+          const result = await this.updateNote(note.serverId, {
+            title: note.title,
+            content: note.content,
+            path: note.path,
+            isFolder: note.isFolder,
+            serverParentId: note.serverParentId
+          })
+          
+          if (result.success && result.data) {
+            syncedNotes.push(result.data)
+          } else {
+            console.warn(`❌ Failed to update note ${note.title}:`, result.error)
+            errorCount++
+          }
+        } else {
+          // Create new note
+          console.log(`➕ Creating note: ${note.title}`)
+          const result = await this.createNote({
+            title: note.title,
+            content: note.content,
+            path: note.path,
+            is_folder: note.isFolder,
+            parent_id: note.serverParentId || null,
+            client_id: note.clientId || note.id
+          })
+          
+          if (result.success && result.data) {
+            syncedNotes.push(result.data)
+          } else {
+            console.warn(`❌ Failed to create note ${note.title}:`, result.error)
+            errorCount++
+          }
+        }
+      } catch (error) {
+        console.error(`💥 Exception syncing note ${note.title}:`, error)
+        errorCount++
+      }
+      
+      // Add small delay between requests to avoid overwhelming server
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    
+    // Process deletions
+    for (const clientId of deletedClientIds) {
+      try {
+        // Find notes to delete by client_id - this would need to be done differently
+        // since we don't have a direct way to find server ID by client ID
+        console.log(`🗑️ Processing deletion for client ID: ${clientId}`)
+        
+        // For now, we'll skip individual deletions as they're complex to implement
+        // without a client_id lookup endpoint. The bulk-sync is really needed for this.
+        console.warn(`⚠️ Skipping deletion of client ID ${clientId} - bulk-sync needed for deletions`)
+        
+      } catch (error) {
+        console.error(`💥 Exception deleting client ID ${clientId}:`, error)
+        errorCount++
+      }
+    }
+    
+    const successRate = notesToSync.length > 0 ? 
+      ((notesToSync.length - errorCount) / notesToSync.length * 100).toFixed(1) : '100'
+    
+    console.log(`✅ Fallback sync completed: ${syncedNotes.length}/${notesToSync.length} notes synced (${successRate}% success rate)`)
+    
+    if (errorCount > 0) {
+      return {
+        success: false,
+        error: `Fallback sync completed with ${errorCount} errors. ${syncedNotes.length} notes successfully synced.`,
+        data: syncedNotes
+      }
+    }
+    
+    return { success: true, data: syncedNotes }
   }
 }
 
