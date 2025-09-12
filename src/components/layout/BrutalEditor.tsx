@@ -53,6 +53,7 @@ import { ElementFormatToolbarPlugin } from "@/components/editor/plugins/toolbar/
 import { FontColorToolbarPlugin } from "@/components/editor/plugins/toolbar/font-color-toolbar-plugin"
 import { FontBackgroundToolbarPlugin } from "@/components/editor/plugins/toolbar/font-background-toolbar-plugin"
 import { FontSizeToolbarPlugin } from "@/components/editor/plugins/toolbar/font-size-toolbar-plugin"
+import { SummarizeToolbarPlugin } from "@/components/editor/plugins/toolbar/summarize-toolbar-plugin"
 import { BlockFormatDropDown } from "@/components/editor/plugins/toolbar/block-format-toolbar-plugin"
 import { FormatBulletedList } from "@/components/editor/plugins/toolbar/block-format/format-bulleted-list"
 import { FormatCheckList } from "@/components/editor/plugins/toolbar/block-format/format-check-list"
@@ -297,6 +298,8 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
             <div className="w-px h-6 bg-black mx-1" />
             <FontColorToolbarPlugin />
             <FontBackgroundToolbarPlugin />
+            <div className="w-px h-6 bg-black mx-1" />
+            <SummarizeToolbarPlugin />
           </div>
         )}
       </ToolbarPlugin>
