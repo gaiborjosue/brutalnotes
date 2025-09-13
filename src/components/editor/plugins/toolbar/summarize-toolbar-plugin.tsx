@@ -15,6 +15,7 @@ interface SummarizerOptions {
   type?: 'key-points' | 'tl;dr' | 'teaser' | 'headline'
   format?: 'markdown' | 'plain-text'
   length?: 'short' | 'medium' | 'long'
+  monitor?: (m: EventTarget) => void
 }
 
 interface SummarizeOptions {
@@ -57,8 +58,11 @@ export function SummarizeToolbarPlugin() {
   const [isSupported, setIsSupported] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [checkingSupport, setCheckingSupport] = useState(true)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState(0)
+  const [availabilityStatus, setAvailabilityStatus] = useState<'readily' | 'after-download' | 'no' | null>(null)
 
-  console.log("🔧 SummarizeToolbarPlugin rendered, isSupported:", isSupported, "checkingSupport:", checkingSupport)
+  console.log("🔧 SummarizeToolbarPlugin rendered, isSupported:", isSupported, "checkingSupport:", checkingSupport, "availabilityStatus:", availabilityStatus)
 
   useEffect(() => {
     // Check if the Summarizer API is supported
@@ -71,6 +75,8 @@ export function SummarizeToolbarPlugin() {
           console.log("📡 Calling Summarizer.availability()...")
           const availability = await Summarizer.availability()
           console.log("📊 API availability response:", availability)
+          
+          setAvailabilityStatus(availability)
           
           if (availability === 'no') {
             console.log("❌ Summarizer API isn't usable")
@@ -116,17 +122,46 @@ export function SummarizeToolbarPlugin() {
         return
       }
 
-      // Create the summarizer
+      // Check if we need to download the model first
+      if (availabilityStatus === 'after-download') {
+        console.log("📥 Model needs to be downloaded first...")
+        setIsDownloading(true)
+        setDownloadProgress(0)
+      }
+
+      // Create the summarizer with download monitoring
       const summarizer = await Summarizer.create({
         type: 'key-points',
         format: 'plain-text',
-        length: 'medium'
+        length: 'medium',
+        monitor(m) {
+          m.addEventListener('downloadprogress', (e) => {
+            const progressEvent = e as Event & { loaded: number }
+            const progress = Math.round(progressEvent.loaded * 100)
+            console.log(`📥 Downloaded ${progress}%`)
+            setDownloadProgress(progress)
+            
+            if (progress >= 100) {
+              setIsDownloading(false)
+              console.log("✅ Model download completed!")
+            }
+          })
+        }
       })
 
+      // If we were downloading, mark as complete
+      if (isDownloading) {
+        setIsDownloading(false)
+        setDownloadProgress(100)
+      }
+
+      console.log("🤖 Generating summary...")
       // Generate summary
       const summary = await summarizer.summarize(textContent, {
         context: 'This is a note or document that needs to be summarized for quick reference.'
       })
+
+      console.log("📝 Summary generated:", summary.substring(0, 100) + "...")
 
       // Insert the summary at the top of the document
       activeEditor.update(() => {
@@ -161,13 +196,16 @@ export function SummarizeToolbarPlugin() {
         }
       })
 
+      console.log("✅ Summary inserted into document!")
+
     } catch (error) {
-      console.error("Error generating summary:", error)
+      console.error("❌ Error generating summary:", error)
       alert("Failed to generate summary. Please try again.")
+      setIsDownloading(false)
     } finally {
       setIsLoading(false)
     }
-  }, [activeEditor, isSupported, isLoading])
+  }, [activeEditor, isSupported, isLoading, availabilityStatus, isDownloading])
 
   // Show loading state while checking support
   if (checkingSupport) {
@@ -217,23 +255,74 @@ export function SummarizeToolbarPlugin() {
 
   console.log("✅ Rendering summarize button!")
 
+  // Show different button states based on what's happening
+  const getButtonContent = () => {
+    if (isDownloading) {
+      return {
+        icon: <Star28
+          className="text-purple-500 dark:text-blue-500 animate-pulse"
+          pathClassName="stroke-black dark:stroke-white"
+          size={16}
+          strokeWidth={2}
+        />,
+        text: `Downloading... ${downloadProgress}%`,
+        title: `Downloading AI model: ${downloadProgress}%`
+      }
+    }
+    
+    if (isLoading) {
+      return {
+        icon: <Star28
+          className="text-purple-500 dark:text-blue-500 animate-spin"
+          pathClassName="stroke-black dark:stroke-white"
+          size={16}
+          strokeWidth={2}
+        />,
+        text: "Summarizing...",
+        title: "Generating summary..."
+      }
+    }
+    
+    // Show different text based on availability status
+    if (availabilityStatus === 'after-download') {
+      return {
+        icon: <Star28
+          className="text-purple-500 dark:text-blue-500"
+          pathClassName="stroke-black dark:stroke-white"
+          size={16}
+          strokeWidth={2}
+        />,
+        text: "Summarize*",
+        title: "Summarize your note using AI (will download model first time)"
+      }
+    }
+    
+    return {
+      icon: <Star28
+        className="text-purple-500 dark:text-blue-500"
+        pathClassName="stroke-black dark:stroke-white"
+        size={16}
+        strokeWidth={2}
+      />,
+      text: "Summarize",
+      title: "Summarize your note using AI"
+    }
+  }
+
+  const buttonContent = getButtonContent()
+
   return (
     <Button
-      disabled={isLoading}
+      disabled={isLoading || isDownloading}
       onClick={handleSummarize}
-      title="Summarize your note using AI"
+      title={buttonContent.title}
       aria-label="Summarize"
       size="sm"
       className="!h-8 flex items-center gap-1 px-2"
     >
-      <Star28
-        className={`text-purple-500 dark:text-blue-500 ${isLoading ? 'animate-spin' : ''}`}
-        pathClassName="stroke-black dark:stroke-white"
-        size={16}
-        strokeWidth={2}
-      />
+      {buttonContent.icon}
       <span className="text-xs font-black">
-        {isLoading ? "Summarizing..." : "Summarize"}
+        {buttonContent.text}
       </span>
     </Button>
   )
