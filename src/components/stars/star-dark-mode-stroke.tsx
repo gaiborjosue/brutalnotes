@@ -1,8 +1,8 @@
-import Star8 from "@/components/stars/s8"
+import Star26 from "@/components/stars/s26"
 
 export default function StarDarkModeStroke() {
   return (
-    <Star8
+    <Star26
       className="text-red-500 dark:text-blue-500"
       pathClassName="stroke-black dark:stroke-white"
       size={200}
