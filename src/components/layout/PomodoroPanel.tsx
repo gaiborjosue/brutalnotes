@@ -184,7 +184,7 @@ export function PomodoroPanel() {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-2 h-[calc(100%-4rem)]">
-        <div className="h-full flex flex-col justify-center space-y-2">
+        <div className="h-full flex flex-col justify-center space-y-2 -mt-1">
           {/* Progress Ring */}
           <div className="text-center">
             <Progress 
@@ -196,24 +196,7 @@ export function PomodoroPanel() {
             </div>
           </div>
 
-          {/* Session Counter */}
-          <div className="text-center">
-            <div className="text-xs font-black text-gray-600">
-              SESSIONS: {completedSessions}
-            </div>
-            <div className="flex justify-center mt-1">
-              {Array.from({ length: 4 }, (_, i) => (
-                <div
-                  key={i}
-                  className={`w-2 h-2 mx-0.5 border border-black ${
-                    i < (completedSessions % settings.sessionsUntilLongBreak)
-                      ? 'bg-green-400'
-                      : 'bg-gray-200'
-                  }`}
-                />
-              ))}
-            </div>
-          </div>
+          
 
           {/* Timer Controls */}
           <div className="flex gap-1 justify-center">
