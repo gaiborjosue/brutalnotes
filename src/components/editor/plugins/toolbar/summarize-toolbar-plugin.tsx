@@ -9,7 +9,7 @@ import { $createParagraphNode, $createTextNode } from "lexical"
 
 import { useToolbarContext } from "@/components/editor/context/toolbar-context"
 import { Button } from "@/components/ui/button"
-import Star8 from "@/components/stars/s8"
+import Star28 from "@/components/stars/s28"
 
 interface SummarizerOptions {
   type?: 'key-points' | 'tl;dr' | 'teaser' | 'headline'
@@ -180,8 +180,8 @@ export function SummarizeToolbarPlugin() {
         size="sm"
         className="!h-8 flex items-center gap-1 px-2 opacity-50"
       >
-        <Star8
-          className="text-red-500 dark:text-blue-500"
+        <Star28
+          className="text-purple-500 dark:text-blue-500 animate-spin"
           pathClassName="stroke-black dark:stroke-white"
           size={16}
           strokeWidth={2}
@@ -204,8 +204,8 @@ export function SummarizeToolbarPlugin() {
         size="sm"
         className="!h-8 flex items-center gap-1 px-2 opacity-50"
       >
-        <Star8
-          className="text-red-500 dark:text-blue-500"
+        <Star28
+          className="text-purple-500 dark:text-blue-500"
           pathClassName="stroke-black dark:stroke-white"
           size={16}
           strokeWidth={2}
@@ -226,8 +226,8 @@ export function SummarizeToolbarPlugin() {
       size="sm"
       className="!h-8 flex items-center gap-1 px-2"
     >
-      <Star8
-        className="text-red-500 dark:text-blue-500"
+      <Star28
+        className={`text-purple-500 dark:text-blue-500 ${isLoading ? 'animate-spin' : ''}`}
         pathClassName="stroke-black dark:stroke-white"
         size={16}
         strokeWidth={2}
