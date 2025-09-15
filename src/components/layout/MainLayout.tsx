@@ -214,6 +214,21 @@ export function MainLayout() {
           onNewFileClick={(createFileAction) => {
             checkUnsavedChanges(createFileAction, "create a new file")
           }}
+          beforeFileMove={async (moveAction) => {
+            if (hasUnsavedChanges && unsavedSaveFunction) {
+              setPendingAction(() => {
+                moveAction().catch(error => {
+                  console.error('Failed to move note after resolving unsaved changes:', error)
+                })
+              })
+              setActionDescription("move the note to a different folder")
+              setShowUnsavedDialog(true)
+              return false
+            }
+
+            await moveAction()
+            return true
+          }}
           onFileDeleted={handleFileDeleted}
           onFolderCleared={handleFolderCleared}
           currentFileId={currentFileId}
@@ -362,4 +377,3 @@ export function MainLayout() {
     </div>
   )
 }
-
