@@ -114,7 +114,6 @@ export default function ExcalidrawComponent({
   ])
 
   const deleteNode = useCallback(() => {
-    setModalOpen(false)
     return editor.update(() => {
       const node = $getNodeByKey(nodeKey)
       if (node) {
@@ -169,15 +168,15 @@ export default function ExcalidrawComponent({
     })
   }
 
-  const openModal = useCallback(() => {
-    setModalOpen(true)
-  }, [])
-
   const {
     elements = [],
     files = {},
     appState = {},
   } = useMemo(() => JSON.parse(data), [data])
+
+  const openModal = useCallback(() => {
+    setModalOpen(true)
+  }, [])
 
   const closeModal = useCallback(() => {
     setModalOpen(false)
