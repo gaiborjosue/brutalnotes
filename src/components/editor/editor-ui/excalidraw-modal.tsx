@@ -253,7 +253,7 @@ export function ExcalidrawModal({
                 />
               </Suspense>
               <div className="absolute right-1/2 -bottom-8 z-10 flex translate-x-1/2 gap-2">
-                <Button variant="reverse" onClick={onClose}>
+                <Button onClick={onClose}>
                   Discard
                 </Button>
                 <Button onClick={save}>Save</Button>
