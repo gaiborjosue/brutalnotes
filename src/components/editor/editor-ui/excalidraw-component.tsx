@@ -1,6 +1,6 @@
-import { JSX, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import * as React from "react"
-import { AppState, BinaryFiles } from "@excalidraw/excalidraw/types"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { JSX } from "react"
+import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types"
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
 import { useLexicalEditable } from "@lexical/react/useLexicalEditable"
 import { useLexicalNodeSelection } from "@lexical/react/useLexicalNodeSelection"
@@ -114,7 +114,6 @@ export default function ExcalidrawComponent({
   ])
 
   const deleteNode = useCallback(() => {
-    setModalOpen(false)
     return editor.update(() => {
       const node = $getNodeByKey(nodeKey)
       if (node) {
@@ -169,15 +168,15 @@ export default function ExcalidrawComponent({
     })
   }
 
-  const openModal = useCallback(() => {
-    setModalOpen(true)
-  }, [])
-
   const {
     elements = [],
     files = {},
     appState = {},
   } = useMemo(() => JSON.parse(data), [data])
+
+  const openModal = useCallback(() => {
+    setModalOpen(true)
+  }, [])
 
   const closeModal = useCallback(() => {
     setModalOpen(false)

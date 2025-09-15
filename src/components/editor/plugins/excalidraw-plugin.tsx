@@ -1,5 +1,4 @@
 import { JSX, useEffect, useState } from "react"
-import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types"
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
 import { $wrapNodeInElement } from "@lexical/utils"
 import {
@@ -11,12 +10,9 @@ import {
   LexicalCommand,
 } from "lexical"
 
-import type { ExcalidrawInitialElements } from "@/components/editor/editor-ui/excalidraw-modal"
+import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types"
 import { ExcalidrawModal } from "@/components/editor/editor-ui/excalidraw-modal"
-import {
-  $createExcalidrawNode,
-  ExcalidrawNode,
-} from "@/components/editor/nodes/excalidraw-node"
+import { $createExcalidrawNode, ExcalidrawNode } from "@/components/editor/nodes/excalidraw-node"
 
 export const INSERT_EXCALIDRAW_COMMAND: LexicalCommand<void> = createCommand(
   "INSERT_EXCALIDRAW_COMMAND"
@@ -43,27 +39,18 @@ export function ExcalidrawPlugin(): JSX.Element | null {
     )
   }, [editor])
 
-  const onClose = () => {
-    setModalOpen(false)
-  }
-
-  const onDelete = () => {
-    setModalOpen(false)
-  }
+  const onClose = () => setModalOpen(false)
+  const onDelete = () => setModalOpen(false)
 
   const onSave = (
-    elements: ExcalidrawInitialElements,
+    elements: any,
     appState: Partial<AppState>,
     files: BinaryFiles
   ) => {
     editor.update(() => {
       const excalidrawNode = $createExcalidrawNode()
       excalidrawNode.setData(
-        JSON.stringify({
-          appState,
-          elements,
-          files,
-        })
+        JSON.stringify({ appState, elements, files })
       )
       $insertNodes([excalidrawNode])
       if ($isRootOrShadowRoot(excalidrawNode.getParentOrThrow())) {
@@ -72,6 +59,7 @@ export function ExcalidrawPlugin(): JSX.Element | null {
     })
     setModalOpen(false)
   }
+
   return (
     <>
       {isModalOpen && (

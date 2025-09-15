@@ -6,7 +6,8 @@ import {
   Play, 
   Pause, 
   RotateCcw,
-  Target
+  Target,
+  SkipForward
 } from "lucide-react"
 import Star37 from "@/components/stars/s37"
 import Star34 from "@/components/stars/s34"
@@ -157,17 +158,17 @@ export function PomodoroPanel() {
 
   return (
     <Card className="h-[calc(100%-0.5rem)] border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white">
-      <CardHeader className="border-b-4 border-black bg-red-300 p-3">
+      <CardHeader className="border-b-4 border-black bg-red-300 p-2">
         <CardTitle className="text-lg font-black text-black flex items-center justify-between">
           <div className="flex items-center gap-2">
             {isLongBreak ? (
               <>
-                <Star36 className="h-5 w-5" />
+                <Star36 className="h-4 w-4" />
                 LONG BREAK
               </>
             ) : isBreak ? (
               <>
-                <Star34 className="h-5 w-5" />
+                <Star34 className="h-4 w-4" />
                 SHORT BREAK
               </>
             ) : (
@@ -191,7 +192,7 @@ export function PomodoroPanel() {
               value={getProgressPercentage()} 
               className="h-2 border-2 border-black mb-1"
             />
-            <div className="text-2xl font-black font-mono text-black border-4 border-black p-2 bg-white">
+            <div className="text-xl font-black font-mono text-black border-3 border-black p-1 bg-white">
               {formatTime(timeLeft)}
             </div>
           </div>
@@ -203,28 +204,28 @@ export function PomodoroPanel() {
             <Button
               onClick={toggleTimer}
               size="sm"
-              className={`border-2 border-black shadow-[2px_2px_0px_0px_#000] font-black px-3 ${
+              className={`border-2 border-black shadow-[2px_2px_0px_0px_#000] font-black px-2 ${
                 isActive 
                   ? "bg-red-400 hover:bg-red-500" 
                   : "bg-green-400 hover:bg-green-500"
               } text-black`}
             >
-              {isActive ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+              {isActive ? <Pause className="h-2 w-2" /> : <Play className="h-2 w-2" />}
             </Button>
             <Button
               onClick={resetTimer}
               size="sm"
-              className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-gray-400 hover:bg-gray-500 text-black font-black px-3"
+              className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-gray-400 hover:bg-gray-500 text-black font-black px-2"
             >
-              <RotateCcw className="h-3 w-3" />
+              <RotateCcw className="h-2 w-2" />
             </Button>
             <Button
               onClick={skipSession}
               size="sm"
-              className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-blue-400 hover:bg-blue-500 text-black font-black px-3"
+              className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-blue-400 hover:bg-blue-500 text-black font-black px-2"
               title="Skip to next session"
             >
-              ⏭
+              <SkipForward className="h-2 w-2" />
             </Button>
           </div>
 
