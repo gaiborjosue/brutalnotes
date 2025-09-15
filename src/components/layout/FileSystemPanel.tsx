@@ -33,9 +33,10 @@ interface FileSystemPanelProps {
   onFileDeleted?: (noteId: number) => void
   onFolderCleared?: (deletedNoteIds: number[]) => void
   currentFileId?: number | null
+  beforeFileMove?: (moveAction: () => Promise<void>) => Promise<boolean>
 }
 
-export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick, onFileDeleted, onFolderCleared, currentFileId }, ref) => {
+export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick, onFileDeleted, onFolderCleared, currentFileId, beforeFileMove }, ref) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [loading, setLoading] = useState(true)
   const [editingFile, setEditingFile] = useState<string | null>(null)
@@ -373,26 +374,39 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         const normalizedParentPath = parentPath.replace(/^\/+|\/+$/g, '')
         const newPath = normalizedParentPath ? `${normalizedParentPath}/${finalFileName}` : finalFileName
 
-        const result = await NoteService.updateNote(fileId, {
-          parentId: folderId,
-          parentClientId: parentNote.clientId ?? folderId,
-          serverParentId: parentNote.serverId,
-          path: newPath
-        })
+        const performMove = async () => {
+          const result = await NoteService.updateNote(fileId, {
+            parentId: folderId,
+            parentClientId: parentNote.clientId ?? folderId,
+            serverParentId: parentNote.serverId,
+            path: newPath
+          })
 
-        if (result.success) {
-          // Refresh the file tree immediately so the user sees the new location
-          await refreshFileTree()
+          if (result.success) {
+            // Refresh the file tree immediately so the user sees the new location
+            await refreshFileTree()
 
-          try {
-            await NotesSyncService.performFullSync()
-          } catch (syncError) {
-            console.warn('Notes sync after move failed:', syncError)
+            try {
+              await NotesSyncService.performFullSync()
+            } catch (syncError) {
+              console.warn('Notes sync after move failed:', syncError)
+            }
+
+            console.log('✅ File moved successfully!')
+          } else {
+            console.error('❌ Failed to move file:', result.error)
           }
+        }
 
-          console.log('✅ File moved successfully!')
+        if (beforeFileMove) {
+          const allowed = await beforeFileMove(performMove)
+          if (!allowed) {
+            setDraggedItem(null)
+            setDropTarget(null)
+            return
+          }
         } else {
-          console.error('❌ Failed to move file:', result.error)
+          await performMove()
         }
       } catch (error) {
         console.error('❌ Error moving file:', error)
