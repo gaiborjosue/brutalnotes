@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import Star27 from "@/components/stars/s27"
 import { NoteService } from "@/lib/database-service"
+import { NotesSyncService } from "@/lib/notes-sync-service"
 import type { FileNode } from "@/lib/types"
 import nickGenerator from "nick-generator"
 
@@ -65,6 +66,12 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       refreshFileTree().catch(error => {
         console.error('Failed to refresh file tree after notes sync:', error)
       })
+
+      setTimeout(() => {
+        refreshFileTree().catch(error => {
+          console.error('Failed to refresh file tree after delayed notes sync refresh:', error)
+        })
+      }, 100)
     }
 
     window.addEventListener('notesSynced', handleNotesSynced)
@@ -207,7 +214,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       const result = await NoteService.createNote(
         folderName,
         '',
-        `/${folderName}`,
+        folderName,
         true // isFolder
       )
       
@@ -274,7 +281,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       const result = await NoteService.createNote(
         noteName,
         defaultContent,
-        `/temp/${noteName}`,
+        `temp/${noteName}`,
         false, // isFolder
         tempFolderId
       )
@@ -338,14 +345,51 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         const fileId = parseInt(draggedItem)
         const folderId = parseInt(targetFolderId)
         
-        // Update the file's parent ID in the database
+        const [fileResult, parentResult] = await Promise.all([
+          NoteService.getNoteById(fileId),
+          NoteService.getNoteById(folderId)
+        ])
+
+        if (!fileResult.success || !fileResult.data) {
+          throw new Error('File to move not found')
+        }
+
+        if (!parentResult.success || !parentResult.data) {
+          throw new Error('Target folder not found')
+        }
+
+        const fileNote = fileResult.data
+        const parentNote = parentResult.data
+
+        const fileNameFromPath = fileNote.path
+          ? fileNote.path.split('/').filter(Boolean).pop() ?? fileNote.title
+          : fileNote.title
+
+        const finalFileName = fileNameFromPath.endsWith('.lexical')
+          ? fileNameFromPath
+          : `${fileNameFromPath}.lexical`
+
+        const parentPath = parentNote.path ?? ''
+        const normalizedParentPath = parentPath.replace(/^\/+|\/+$/g, '')
+        const newPath = normalizedParentPath ? `${normalizedParentPath}/${finalFileName}` : finalFileName
+
         const result = await NoteService.updateNote(fileId, {
-          parentId: folderId
+          parentId: folderId,
+          parentClientId: parentNote.clientId ?? folderId,
+          serverParentId: parentNote.serverId,
+          path: newPath
         })
-        
+
         if (result.success) {
-          // Refresh the file tree
+          // Refresh the file tree immediately so the user sees the new location
           await refreshFileTree()
+
+          try {
+            await NotesSyncService.performFullSync()
+          } catch (syncError) {
+            console.warn('Notes sync after move failed:', syncError)
+          }
+
           console.log('✅ File moved successfully!')
         } else {
           console.error('❌ Failed to move file:', result.error)
