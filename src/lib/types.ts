@@ -25,6 +25,7 @@ export interface Note {
   isFolder: boolean
   parentId?: number // For nested folder structure (local)
   serverParentId?: string // UUID of parent on server
+  parentClientId?: number // Client ID of parent for cross-device sync fallback
   deleted?: boolean // Soft delete flag for sync purposes
 }
 

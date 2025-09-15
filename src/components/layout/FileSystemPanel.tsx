@@ -60,6 +60,20 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     loadFileTree()
   }, [])
 
+  useEffect(() => {
+    const handleNotesSynced = (_event: Event) => {
+      refreshFileTree().catch(error => {
+        console.error('Failed to refresh file tree after notes sync:', error)
+      })
+    }
+
+    window.addEventListener('notesSynced', handleNotesSynced)
+
+    return () => {
+      window.removeEventListener('notesSynced', handleNotesSynced)
+    }
+  }, [])
+
 
   // Refresh file tree from database
   const refreshFileTree = async () => {

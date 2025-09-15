@@ -65,11 +65,11 @@ export function MainLayout() {
     setUnsavedSaveFunction(() => saveFunction)
   }, [])
 
-  // Handle auto-saved file changes to track current file
-  const handleAutoSavedFileChange = useCallback((fileId: number | null) => {
+  // Handle current file changes to track active file
+  const handleCurrentFileChange = useCallback((fileId: number | null) => {
     if (fileId) {
-      setCurrentFileId(fileId) // Track auto-saved files as current
-      // Refresh file tree to show the newly created auto-saved file
+      setCurrentFileId(fileId) // Track current files
+      // Refresh file tree to show the newly created file
       fileSystemRef.current?.refreshFileTree()
     }
   }, [])
@@ -340,7 +340,7 @@ export function MainLayout() {
                            onFileSaved={handleFileSaved} 
                            onLoadFile={handleLoadFile}
                            onUnsavedChangesWarning={handleUnsavedChangesWarning}
-                           onAutoSavedFileChange={handleAutoSavedFileChange}
+                           onCurrentFileChange={handleCurrentFileChange}
                            currentFileId={currentFileId}
                          />
                        </div>
