@@ -92,6 +92,7 @@ export async function initializeDatabase() {
         updatedAt: new Date(),
         syncStatus: 'pending'
       })
+      await db.notes.update(tempFolder, { clientId: tempFolder })
       console.log('✅ Created temp folder with ID:', tempFolder)
 
       // Create default "Brutal Notes" folder 
@@ -104,6 +105,7 @@ export async function initializeDatabase() {
         updatedAt: new Date(),
         syncStatus: 'pending'
       })
+      await db.notes.update(brutalFolder, { clientId: brutalFolder })
       console.log('✅ Created Brutal Notes folder with ID:', brutalFolder)
 
       // Create a welcome note in temp folder
@@ -167,6 +169,7 @@ export async function initializeDatabase() {
         updatedAt: new Date(),
         syncStatus: 'pending'
       })
+      await db.notes.update(welcomeFile, { clientId: welcomeFile })
       console.log('✅ Created welcome note with ID:', welcomeFile)
       
       // Verify what was created
