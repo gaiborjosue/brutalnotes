@@ -143,7 +143,7 @@ export function TodoPanel() {
 
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-3 h-[calc(100%-4rem)]">
+      <CardContent className="p-3 pt-0 h-[calc(100%-4rem)]">
         <div className="space-y-3 h-full flex flex-col">
           {/* Network error display */}
           {networkError && (
