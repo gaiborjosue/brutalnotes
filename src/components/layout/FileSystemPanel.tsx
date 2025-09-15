@@ -536,7 +536,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
           </Popover>
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0 h-[calc(100%-4rem)]">
+      <CardContent className="p-0 pt-0 h-[calc(100%-4rem)]">
         <ScrollArea className="h-full">
           <div className="p-3 space-y-1">
             {loading ? (
