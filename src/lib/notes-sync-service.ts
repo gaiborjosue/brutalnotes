@@ -12,7 +12,7 @@ interface SyncResult {
   errors: string[]
 }
 
-class NotesSyncService {
+export class NotesSyncService {
   private static isOnline(): boolean {
     return navigator.onLine
   }
