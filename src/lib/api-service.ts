@@ -425,7 +425,11 @@ class ApiService {
       sampleNote: notesToSync[0] ? { 
         title: notesToSync[0].title, 
         contentLength: notesToSync[0].content?.length || 0,
-        hasLargeContent: (notesToSync[0].content?.length || 0) > 100000
+        hasLargeContent: (notesToSync[0].content?.length || 0) > 100000,
+        serverParentId: notesToSync[0].serverParentId,
+        parentClientId: notesToSync[0].parentClientId,
+        parentId: notesToSync[0].parentId,
+        clientId: notesToSync[0].clientId
       } : null
     })
     
