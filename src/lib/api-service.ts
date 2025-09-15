@@ -304,6 +304,7 @@ class ApiService {
         serverId: String(serverNote.id),
         serverParentId: serverNote.parent_id ? String(serverNote.parent_id) : undefined,
         clientId: serverNote.client_id,
+        parentClientId: serverNote.parent_client_id ?? undefined,
         createdAt: new Date(serverNote.created_at),
         updatedAt: new Date(serverNote.updated_at),
         syncStatus: 'synced' as const,
@@ -333,6 +334,7 @@ class ApiService {
       path: noteData.path,
       is_folder: noteData.isFolder,
       parent_id: noteData.serverParentId || null,
+      parent_client_id: noteData.parentClientId ?? noteData.parentId ?? null,
       client_id: noteData.clientId || noteData.id
     }
     
@@ -346,6 +348,7 @@ class ApiService {
         serverId: String(result.data.note.id),
         serverParentId: result.data.note.parent_id ? String(result.data.note.parent_id) : undefined,
         clientId: result.data.note.client_id,
+        parentClientId: result.data.note.parent_client_id ?? undefined,
         createdAt: new Date(result.data.note.created_at),
         updatedAt: new Date(result.data.note.updated_at),
         syncStatus: 'synced' as const,
@@ -363,7 +366,8 @@ class ApiService {
       content: updates.content,
       path: updates.path,
       is_folder: updates.isFolder,
-      parent_id: updates.serverParentId
+      parent_id: updates.serverParentId,
+      parent_client_id: updates.parentClientId ?? updates.parentId ?? null
     }
     
     const result = await this.makeRequest<{note: any}>(`/notes/${id}`, 'PUT', serverUpdates)
@@ -376,6 +380,7 @@ class ApiService {
         serverId: String(result.data.note.id),
         serverParentId: result.data.note.parent_id ? String(result.data.note.parent_id) : undefined,
         clientId: result.data.note.client_id,
+        parentClientId: result.data.note.parent_client_id ?? undefined,
         createdAt: new Date(result.data.note.created_at),
         updatedAt: new Date(result.data.note.updated_at),
         syncStatus: 'synced' as const,
@@ -403,6 +408,7 @@ class ApiService {
         path: note.path,
         is_folder: note.isFolder, // Backend expects is_folder
         parent_id: note.serverParentId || null, // Backend expects parent_id as UUID
+        parent_client_id: note.parentClientId ?? note.parentId ?? null,
         client_id: note.clientId || note.id // Backend expects client_id for mapping
       })),
       client_notes_deleted: deletedClientIds,
@@ -448,6 +454,7 @@ class ApiService {
         serverId: String(serverNote.id),
         serverParentId: serverNote.parent_id ? String(serverNote.parent_id) : undefined,
         clientId: serverNote.client_id,
+        parentClientId: serverNote.parent_client_id ?? undefined,
         createdAt: new Date(serverNote.created_at),
         updatedAt: new Date(serverNote.updated_at),
         syncStatus: 'synced' as const,
@@ -480,7 +487,8 @@ class ApiService {
             content: note.content,
             path: note.path,
             isFolder: note.isFolder,
-            serverParentId: note.serverParentId
+            serverParentId: note.serverParentId,
+            parentClientId: note.parentClientId ?? note.parentId
           })
           
           if (result.success && result.data) {
@@ -498,6 +506,7 @@ class ApiService {
             path: note.path,
             is_folder: note.isFolder,
             parent_id: note.serverParentId || null,
+            parent_client_id: note.parentClientId ?? note.parentId ?? null,
             client_id: note.clientId || note.id
           })
           

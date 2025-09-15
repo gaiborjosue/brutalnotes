@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, memo } from "react"
 import { $getRoot } from "lexical"
 import { $createCollapsibleContainerNode } from "@/components/editor/nodes/collapsible-container-node"
 import { $createCollapsibleTitleNode } from "@/components/editor/nodes/collapsible-title-node"
@@ -41,19 +41,15 @@ declare global {
 }
 
 function isChromeWithSummarizerAPI(): boolean {
-  console.log("🔍 Checking for Summarizer API support...")
-  
   // Feature detection as per docs: https://developer.chrome.com/docs/ai/summarizer-api
   if ('Summarizer' in self) {
-    console.log("✅ Summarizer API is supported")
     return true
   } else {
-    console.log("❌ Summarizer API is not supported")
     return false
   }
 }
 
-export function SummarizeToolbarPlugin() {
+function SummarizeToolbarPluginComponent() {
   const { activeEditor } = useToolbarContext()
   const [isSupported, setIsSupported] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -62,40 +58,32 @@ export function SummarizeToolbarPlugin() {
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [availabilityStatus, setAvailabilityStatus] = useState<'readily' | 'after-download' | 'no' | null>(null)
 
-  console.log("🔧 SummarizeToolbarPlugin rendered, isSupported:", isSupported, "checkingSupport:", checkingSupport, "availabilityStatus:", availabilityStatus)
+  // Debug: This should only log when component actually re-renders (not on every keystroke)
 
   useEffect(() => {
     // Check if the Summarizer API is supported
     const checkSupport = async () => {
-      console.log("🚀 Starting API support check...")
       setCheckingSupport(true)
       
       if (isChromeWithSummarizerAPI()) {
         try {
-          console.log("📡 Calling Summarizer.availability()...")
           const availability = await Summarizer.availability()
-          console.log("📊 API availability response:", availability)
-          
           setAvailabilityStatus(availability)
           
           if (availability === 'no') {
-            console.log("❌ Summarizer API isn't usable")
             setIsSupported(false)
           } else {
-            console.log("✅ Summarizer API is available:", availability)
             setIsSupported(true)
           }
         } catch (error) {
-          console.error("❌ Error checking availability:", error)
+          console.error("❌ Error checking Summarizer API availability:", error)
           setIsSupported(false)
         }
       } else {
-        console.log("❌ Summarizer not supported in this browser")
         setIsSupported(false)
       }
       
       setCheckingSupport(false)
-      console.log("🏁 API support check completed")
     }
 
     checkSupport()
@@ -205,11 +193,11 @@ export function SummarizeToolbarPlugin() {
     } finally {
       setIsLoading(false)
     }
-  }, [activeEditor, isSupported, isLoading, availabilityStatus, isDownloading])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSupported, isLoading, availabilityStatus])
 
   // Show loading state while checking support
   if (checkingSupport) {
-    console.log("⏳ Still checking support...")
     return (
       <Button
         disabled={true}
@@ -232,7 +220,6 @@ export function SummarizeToolbarPlugin() {
   // Only render the button if the API is supported (Chrome with Summarizer API)
   // TEMPORARY: Show button for debugging even if API not supported
   if (!isSupported) {
-    console.log("🚫 Button not rendered - API not supported")
     // Temporarily render a disabled button for debugging
     return (
       <Button
@@ -252,8 +239,6 @@ export function SummarizeToolbarPlugin() {
       </Button>
     )
   }
-
-  console.log("✅ Rendering summarize button!")
 
   // Show different button states based on what's happening
   const getButtonContent = () => {
@@ -327,3 +312,6 @@ export function SummarizeToolbarPlugin() {
     </Button>
   )
 }
+
+// Export memoized version to prevent unnecessary re-renders
+export const SummarizeToolbarPlugin = memo(SummarizeToolbarPluginComponent)

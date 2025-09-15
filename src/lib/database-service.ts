@@ -263,12 +263,14 @@ class NoteService {
     parentId?: number
   ): Promise<DatabaseResult<Note>> {
     try {
+      const normalizedPath = NoteService.normalizePath(path)
       const noteData: Omit<Note, 'id'> = {
         title,
         content,
-        path,
+        path: normalizedPath,
         isFolder,
         parentId,
+        parentClientId: parentId,
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending'
@@ -293,10 +295,18 @@ class NoteService {
   static async updateNote(id: number, updates: Partial<Note>): Promise<DatabaseResult<Note>> {
     try {
       // Always mark as pending when updating locally (unless explicitly set to synced)
-      const updateData = { 
+      const updateData: Partial<Note> = { 
         ...updates, 
         updatedAt: new Date(),
         syncStatus: updates.syncStatus || 'pending'
+      }
+
+      if (updates.parentId !== undefined && updateData.parentClientId === undefined) {
+        updateData.parentClientId = updates.parentId ?? undefined
+      }
+
+      if (updates.path !== undefined) {
+        updateData.path = NoteService.normalizePath(updates.path)
       }
       
       await db.notes.update(id, updateData)
@@ -426,24 +436,6 @@ class NoteService {
     }
   }
 
-  // Auto-save current note (for editor) - with smart sync debouncing
-  static async autoSaveNote(id: number, content: string): Promise<DatabaseResult<void>> {
-    try {
-      await db.notes.update(id, { 
-        content,
-        updatedAt: new Date(),
-        syncStatus: 'pending'
-      })
-      
-      // Trigger smart sync for auto-save (longer debounce)
-      this.triggerNotesSync(true) // true = auto-save mode (longer delay)
-      
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
-  }
-
   // =================
   // NOTES SYNC HELPERS
   // =================
@@ -499,6 +491,13 @@ class NoteService {
       console.error('Manual notes sync error:', error)
       return { success: false, error: String(error) }
     }
+  }
+
+  private static normalizePath(path: string): string {
+    if (!path) {
+      return ''
+    }
+    return path.replace(/^\/+|\/+$/g, '')
   }
 }
 

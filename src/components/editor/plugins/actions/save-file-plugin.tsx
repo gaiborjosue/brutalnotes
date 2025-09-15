@@ -11,24 +11,24 @@ import { NoteService } from "@/lib/database-service"
 
 interface SaveFilePluginProps {
   onFileSaved?: () => void
-  currentAutoSavedFileId?: number | null
-  onAutoSavedFileChange?: (fileId: number | null) => void
+  currentDraftFileId?: number | null
+  onCurrentFileChange?: (fileId: number | null) => void
 }
 
-export function SaveFilePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSavedFileChange }: SaveFilePluginProps) {
+export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileChange }: SaveFilePluginProps) {
   const [editor] = useLexicalComposerContext()
   const [isOpen, setIsOpen] = useState(false)
   const [fileName, setFileName] = useState("")
   const [saving, setSaving] = useState(false)
 
-  // Load current auto-saved file name when dialog opens
+  // Load current draft file name when dialog opens
   useEffect(() => {
-    if (isOpen && currentAutoSavedFileId) {
+    if (isOpen && currentDraftFileId) {
       const loadFileName = async () => {
         try {
           const allNotes = await NoteService.getAllNotes()
           if (allNotes.success && allNotes.data) {
-            const currentFile = allNotes.data.find(note => note.id === currentAutoSavedFileId)
+            const currentFile = allNotes.data.find(note => note.id === currentDraftFileId)
             if (currentFile) {
               // Remove .lexical extension for editing
               const nameWithoutExt = currentFile.title.replace('.lexical', '')
@@ -41,9 +41,9 @@ export function SaveFilePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
       }
       loadFileName()
     } else if (isOpen) {
-      setFileName("") // Clear if no auto-saved file
+      setFileName("") // Clear if no draft file
     }
-  }, [isOpen, currentAutoSavedFileId])
+  }, [isOpen, currentDraftFileId])
 
   const handleSave = async () => {
     if (!fileName.trim()) return
@@ -78,9 +78,9 @@ export function SaveFilePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
 
       let result
 
-      // If we have a current auto-saved file, update it with the new name
-      if (currentAutoSavedFileId) {
-        result = await NoteService.updateNote(currentAutoSavedFileId, {
+      // If we have a current draft file, update it with the new name
+      if (currentDraftFileId) {
+        result = await NoteService.updateNote(currentDraftFileId, {
           title: noteTitle,
           content: contentJson,
           path: notePath,
@@ -103,8 +103,8 @@ export function SaveFilePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
         setFileName("")
         onFileSaved?.() // Refresh file tree
         
-        // Clear current auto-saved file tracking since we've manually saved
-        onAutoSavedFileChange?.(null)
+        // Clear current draft file tracking since we've manually saved
+        onCurrentFileChange?.(null)
         
         // Clear the editor for new content
         editor.update(() => {
@@ -144,7 +144,7 @@ export function SaveFilePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
         <DialogHeader>
           <DialogTitle className="text-xl font-black text-black flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            {currentAutoSavedFileId ? 'RENAME & SAVE FILE' : 'SAVE TO TEMP FOLDER'}
+            {currentDraftFileId ? 'RENAME & SAVE FILE' : 'SAVE TO TEMP FOLDER'}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-4">
@@ -156,7 +156,7 @@ export function SaveFilePlugin({ onFileSaved, currentAutoSavedFileId, onAutoSave
               value={fileName}
               onChange={(e) => setFileName(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder={currentAutoSavedFileId ? "Enter new name" : "brutal-note"}
+              placeholder={currentDraftFileId ? "Enter new name" : "brutal-note"}
               className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white text-black font-mono"
               autoFocus
             />

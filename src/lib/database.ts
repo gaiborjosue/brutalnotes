@@ -24,6 +24,12 @@ export class BrutalNotesDB extends Dexie {
       notes: '++id, serverId, title, content, path, createdAt, updatedAt, syncStatus, isFolder, parentId'
     })
 
+    // Version 3 - Track parent identifiers for cross-device hierarchy sync
+    this.version(3).stores({
+      todos: '++id, serverId, text, completed, deleted, createdAt, updatedAt, syncStatus',
+      notes: '++id, serverId, title, content, path, createdAt, updatedAt, syncStatus, isFolder, parentId, parentClientId, serverParentId'
+    })
+
     // Add hooks for automatic timestamps
     this.todos.hook('creating', (primKey, obj, trans) => {
       obj.createdAt = new Date()
@@ -80,7 +86,7 @@ export async function initializeDatabase() {
       const tempFolder = await db.notes.add({
         title: 'temp',
         content: '',
-        path: '/temp',
+        path: 'temp',
         isFolder: true,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -92,7 +98,7 @@ export async function initializeDatabase() {
       const brutalFolder = await db.notes.add({
         title: 'Brutal Notes',
         content: '',
-        path: '/Brutal Notes',
+        path: 'Brutal Notes',
         isFolder: true,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -153,9 +159,10 @@ export async function initializeDatabase() {
       const welcomeFile = await db.notes.add({
         title: 'welcome.lexical',
         content: welcomeContent,
-        path: '/temp/welcome.lexical',
+        path: 'temp/welcome.lexical',
         isFolder: false,
         parentId: tempFolder, // Points to the temp folder
+        parentClientId: tempFolder,
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending'

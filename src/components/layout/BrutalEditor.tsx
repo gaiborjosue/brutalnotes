@@ -73,7 +73,6 @@ import { ClearEditorActionPlugin } from "@/components/editor/plugins/actions/cle
 import { CounterCharacterPlugin } from "@/components/editor/plugins/actions/counter-character-plugin"
 import { ImportExportPlugin } from "@/components/editor/plugins/actions/import-export-plugin"
 import { SaveFilePlugin } from "@/components/editor/plugins/actions/save-file-plugin"
-import { AutoSavePlugin } from "@/components/editor/plugins/actions/auto-save-plugin"
 import { UnsavedChangesPlugin } from "@/components/editor/plugins/actions/unsaved-changes-plugin"
 import { ContextMenuPlugin } from "@/components/editor/plugins/context-menu-plugin"
 import { editorTheme } from "@/components/editor/themes/editor-theme"
@@ -134,13 +133,13 @@ interface BrutalEditorProps {
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   onUnsavedChangesWarning?: (hasUnsavedChanges: boolean, saveFunction: () => Promise<void>) => void
-  onAutoSavedFileChange?: (fileId: number | null) => void
+  onCurrentFileChange?: (fileId: number | null) => void
   currentFileId?: number | null
 }
 
-export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning, onAutoSavedFileChange, currentFileId }: BrutalEditorProps = {}) {
+export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning, onCurrentFileChange, currentFileId }: BrutalEditorProps = {}) {
   const [editorState, setEditorState] = useState<SerializedEditorState>(initialValue)
-  const [currentAutoSavedFileId, setCurrentAutoSavedFileId] = useState<number | null>(null)
+  const [currentDraftFileId, setCurrentDraftFileId] = useState<number | null>(null)
   const [currentFileName, setCurrentFileName] = useState<string | null>(null)
 
   // Fetch current file name when currentFileId changes
@@ -170,11 +169,11 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
     fetchFileName()
   }, [currentFileId])
 
-  // Combined handler for auto-saved file changes
-  const handleAutoSavedFileChange = useCallback((fileId: number | null) => {
-    setCurrentAutoSavedFileId(fileId) // Update internal state
-    onAutoSavedFileChange?.(fileId)   // Notify parent (MainLayout)
-  }, [onAutoSavedFileChange])
+  // Combined handler for current file changes
+  const handleCurrentFileChange = useCallback((fileId: number | null) => {
+    setCurrentDraftFileId(fileId) // Update internal state
+    onCurrentFileChange?.(fileId)   // Notify parent (MainLayout)
+  }, [onCurrentFileChange])
 
     return (
       <div className="bg-white h-full flex flex-col overflow-hidden border-t-4 border-black">
@@ -188,8 +187,8 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
           <BrutalEditorPlugins 
             onFileSaved={onFileSaved} 
             onLoadFile={onLoadFile} 
-            currentAutoSavedFileId={currentAutoSavedFileId}
-            onAutoSavedFileChange={handleAutoSavedFileChange}
+            currentDraftFileId={currentDraftFileId}
+            onCurrentFileChange={handleCurrentFileChange}
             onUnsavedChangesWarning={onUnsavedChangesWarning}
             currentFileName={currentFileName}
           />
@@ -208,18 +207,16 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
 
 const placeholder = `Start writing here...`
 
-function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, onAutoSavedFileChange, onUnsavedChangesWarning, currentFileName }: { 
+function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName }: { 
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
-  currentAutoSavedFileId?: number | null
-  onAutoSavedFileChange?: (fileId: number | null) => void
+  currentDraftFileId?: number | null
+  onCurrentFileChange?: (fileId: number | null) => void
   onUnsavedChangesWarning?: (hasUnsavedChanges: boolean, saveFunction: () => Promise<void>) => void
   currentFileName?: string | null
 }) {
   const [editor] = useLexicalComposerContext()
   const contentEditableRef = useRef<HTMLDivElement>(null)
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState(false)
-  const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null)
   
   // Auto-focus the editor on mount
   useEffect(() => {
@@ -239,15 +236,15 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
         try {
           const editorState = editor.parseEditorState(content)
           editor.setEditorState(editorState)
-          // Set the current auto-saved file ID to the file being loaded
-          onAutoSavedFileChange?.(fileId)
+          // Set the current file ID to the file being loaded
+          onCurrentFileChange?.(fileId)
         } catch (error) {
           console.error('Error loading file content:', error)
         }
       }
       onLoadFile(loadFileContent)
     }
-  }, []) // Remove dependencies to prevent infinite loop
+  }, [onLoadFile, editor, onCurrentFileChange])
   
   const onRef = () => {
     // Handle floating anchor element if needed
@@ -366,16 +363,14 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
         
         {/* Unsaved Changes Plugin */}
         <UnsavedChangesPlugin
-          currentFileId={currentAutoSavedFileId}
-          isAutoSaveEnabled={autoSaveEnabled}
-          lastSaveTime={lastSaveTime}
+          currentFileId={currentDraftFileId ?? null}
           onUnsavedChangesChange={onUnsavedChangesWarning}
           onManualSave={async () => {
-            // Trigger auto-save manually when user chooses to save
+            // Manual save functionality for unsaved changes dialog
             const editorState = editor.getEditorState()
             const contentJson = JSON.stringify(editorState.toJSON())
             
-            // Use the auto-save logic to save current content
+            // Find temp folder for saving
             const allNotes = await NoteService.getAllNotes()
             let tempFolderId: number | undefined
 
@@ -391,15 +386,15 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
               return
             }
 
-            if (currentAutoSavedFileId) {
-              // Update existing file
-              await NoteService.updateNote(currentAutoSavedFileId, {
+            if (currentDraftFileId) {
+              // Update existing temporary note
+              await NoteService.updateNote(currentDraftFileId, {
                 content: contentJson,
                 updatedAt: new Date()
               })
             } else {
-              // Create new auto-save file
-              const fileName = `UnsavedChanges-${Date.now()}.lexical`
+              // Create new temporary note
+              const fileName = `Draft-${Date.now()}.lexical`
               const result = await NoteService.createNote(
                 fileName,
                 contentJson,
@@ -407,8 +402,8 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
                 false,
                 tempFolderId
               )
-              if (result.success && result.data) {
-                onAutoSavedFileChange?.(result.data.id)
+              if (result.success && result.data?.id) {
+                onCurrentFileChange?.(result.data.id)
               }
             }
             onFileSaved?.()
@@ -422,18 +417,9 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentAutoSavedFileId, 
                  <div className="flex flex-1 justify-start gap-2">
                    <SaveFilePlugin 
                      onFileSaved={onFileSaved} 
-                     currentAutoSavedFileId={currentAutoSavedFileId}
-                     onAutoSavedFileChange={onAutoSavedFileChange}
+                     currentDraftFileId={currentDraftFileId}
+                     onCurrentFileChange={onCurrentFileChange}
                    />
-                  <AutoSavePlugin 
-                    onFileSaved={onFileSaved}
-                    currentAutoSavedFileId={currentAutoSavedFileId}
-                    onAutoSavedFileChange={onAutoSavedFileChange}
-                    onAutoSaveStateChange={(isEnabled, lastSave) => {
-                      setAutoSaveEnabled(isEnabled)
-                      setLastSaveTime(lastSave)
-                    }}
-                  />
                    <ImportExportPlugin />
                  </div>
                  <div className="flex justify-center">

@@ -4,16 +4,12 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 
 interface UnsavedChangesPluginProps {
   currentFileId: number | null
-  isAutoSaveEnabled: boolean
-  lastSaveTime: Date | null
   onUnsavedChangesChange?: (hasUnsavedChanges: boolean, saveFunction: () => Promise<void>) => void
   onManualSave?: () => Promise<void>
 }
 
 export function UnsavedChangesPlugin({
   currentFileId,
-  isAutoSaveEnabled,
-  lastSaveTime,
   onUnsavedChangesChange,
   onManualSave
 }: UnsavedChangesPluginProps) {
@@ -58,20 +54,10 @@ export function UnsavedChangesPlugin({
       return
     }
 
-    // If auto-save is enabled and there's a recent save, content is considered saved
-    if (isAutoSaveEnabled && lastSaveTime) {
-      const timeSinceLastSave = Date.now() - lastSaveTime.getTime()
-      if (timeSinceLastSave < 2000) { // Within 2 seconds of auto-save
-        setLastSavedContent(currentContent)
-        setHasUnsavedChanges(false)
-        return
-      }
-    }
-
     // Check if content has changed since last save
     const contentChanged = currentContent !== lastSavedContent
     setHasUnsavedChanges(contentChanged)
-  }, [editorState, isAutoSaveEnabled, lastSaveTime, lastSavedContent])
+  }, [editorState, lastSavedContent])
 
   // Memoize the save function to prevent unnecessary re-renders
   const saveFunction = useCallback(async () => {
@@ -90,16 +76,7 @@ export function UnsavedChangesPlugin({
       previousHasUnsavedChangesRef.current = hasUnsavedChanges
       onUnsavedChangesChange(hasUnsavedChanges, saveFunction)
     }
-  }, [hasUnsavedChanges, onUnsavedChangesChange])
-
-  // Reset unsaved changes when auto-save completes
-  useEffect(() => {
-    if (isAutoSaveEnabled && lastSaveTime) {
-      const currentContent = JSON.stringify(editorState.toJSON())
-      setLastSavedContent(currentContent)
-      setHasUnsavedChanges(false)
-    }
-  }, [lastSaveTime, isAutoSaveEnabled, editorState])
+  }, [hasUnsavedChanges, onUnsavedChangesChange, saveFunction])
 
   // This plugin doesn't render anything, it just manages state
   return null
