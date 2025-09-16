@@ -11,7 +11,7 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin"
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin"
 import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
 import { HeadingNode, QuoteNode } from "@lexical/rich-text"
-import { ParagraphNode, TextNode, type SerializedEditorState } from "lexical"
+import { ParagraphNode, TextNode, type SerializedEditorState, $getRoot, $createParagraphNode, $createTextNode } from "lexical"
 import { ListItemNode, ListNode } from "@lexical/list"
 import { TableCellNode, TableNode, TableRowNode } from "@lexical/table"
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin"
@@ -23,6 +23,8 @@ import {
   MULTILINE_ELEMENT_TRANSFORMERS,
   TEXT_FORMAT_TRANSFORMERS,
   TEXT_MATCH_TRANSFORMERS,
+  $convertFromMarkdownString,
+  TRANSFORMERS,
 } from "@lexical/markdown"
 import { CheckListPlugin } from "@lexical/react/LexicalCheckListPlugin"
 import { HorizontalRuleNode } from "@lexical/react/LexicalHorizontalRuleNode"
@@ -54,6 +56,8 @@ import { FontColorToolbarPlugin } from "@/components/editor/plugins/toolbar/font
 import { FontBackgroundToolbarPlugin } from "@/components/editor/plugins/toolbar/font-background-toolbar-plugin"
 import { FontSizeToolbarPlugin } from "@/components/editor/plugins/toolbar/font-size-toolbar-plugin"
 import { SummarizeToolbarPlugin } from "@/components/editor/plugins/toolbar/summarize-toolbar-plugin"
+import { ProofreadToolbarPlugin } from "@/components/editor/plugins/toolbar/proofread-toolbar-plugin"
+import { ProofreadingPanel } from "@/components/editor/plugins/toolbar/ProofreadingPanel"
 import { BlockFormatDropDown } from "@/components/editor/plugins/toolbar/block-format-toolbar-plugin"
 import { FormatBulletedList } from "@/components/editor/plugins/toolbar/block-format/format-bulleted-list"
 import { FormatCheckList } from "@/components/editor/plugins/toolbar/block-format/format-check-list"
@@ -141,6 +145,22 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
   const [editorState, setEditorState] = useState<SerializedEditorState>(initialValue)
   const [currentDraftFileId, setCurrentDraftFileId] = useState<number | null>(null)
   const [currentFileName, setCurrentFileName] = useState<string | null>(null)
+  
+  // Proofreading panel state
+  const [proofreadingData, setProofreadingData] = useState<{
+    originalText: string
+    correctedText: string
+    corrections?: {
+      startIndex: number
+      endIndex: number
+      suggestion: string
+      type: string
+      explanation?: string
+    }[]
+  } | null>(null)
+  
+  // Ref to store the editor replacement function
+  const replaceEditorContentRef = useRef<((text: string) => void) | null>(null)
 
   // Fetch current file name when currentFileId changes
   useEffect(() => {
@@ -175,6 +195,26 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
     onCurrentFileChange?.(fileId)   // Notify parent (MainLayout)
   }, [onCurrentFileChange])
 
+  // Proofreading panel handlers
+  const handleProofreadingAccept = useCallback(() => {
+    if (proofreadingData && replaceEditorContentRef.current) {
+      // Replace the editor content with the corrected text
+      replaceEditorContentRef.current(proofreadingData.correctedText)
+      console.log("Accepted proofreading changes and replaced editor content")
+      setProofreadingData(null)
+    } else if (proofreadingData) {
+      console.warn("Editor replacement function not available")
+    }
+  }, [proofreadingData])
+
+  const handleProofreadingReject = useCallback(() => {
+    setProofreadingData(null)
+  }, [])
+
+  const handleProofreadingClose = useCallback(() => {
+    setProofreadingData(null)
+  }, [])
+
     return (
       <div className="bg-white h-full flex flex-col overflow-hidden border-t-4 border-black">
         <LexicalComposer
@@ -184,21 +224,38 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
           }}
         >
           <TooltipProvider>
-          <BrutalEditorPlugins 
-            onFileSaved={onFileSaved} 
-            onLoadFile={onLoadFile} 
-            currentDraftFileId={currentDraftFileId}
-            onCurrentFileChange={handleCurrentFileChange}
-            onUnsavedChangesWarning={onUnsavedChangesWarning}
-            currentFileName={currentFileName}
-          />
-
-          <OnChangePlugin
-              ignoreSelectionChange={true}
-              onChange={(editorState) => {
-                setEditorState(editorState.toJSON())
-              }}
+          {/* Main editor area - takes remaining space when panel is open */}
+          <div className={`flex-1 flex flex-col overflow-hidden ${proofreadingData ? 'min-h-0' : ''}`}>
+            <BrutalEditorPlugins 
+              onFileSaved={onFileSaved} 
+              onLoadFile={onLoadFile} 
+              currentDraftFileId={currentDraftFileId}
+              onCurrentFileChange={handleCurrentFileChange}
+              onUnsavedChangesWarning={onUnsavedChangesWarning}
+              currentFileName={currentFileName}
+              onProofreadingResult={setProofreadingData}
+              replaceEditorContentRef={replaceEditorContentRef}
             />
+
+            <OnChangePlugin
+                ignoreSelectionChange={true}
+                onChange={(editorState) => {
+                  setEditorState(editorState.toJSON())
+                }}
+              />
+          </div>
+
+          {/* Proofreading Panel - shown at bottom when active */}
+          {proofreadingData && (
+            <div className="border-t border-gray-200 bg-white overflow-y-auto max-h-96">
+              <ProofreadingPanel
+                correctedText={proofreadingData.correctedText}
+                onAccept={handleProofreadingAccept}
+                onReject={handleProofreadingReject}
+                onClose={handleProofreadingClose}
+              />
+            </div>
+          )}
           </TooltipProvider>
         </LexicalComposer>
       </div>
@@ -207,16 +264,63 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
 
 const placeholder = `Start writing here...`
 
-function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName }: { 
+function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, replaceEditorContentRef }: { 
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   currentDraftFileId?: number | null
   onCurrentFileChange?: (fileId: number | null) => void
   onUnsavedChangesWarning?: (hasUnsavedChanges: boolean, saveFunction: () => Promise<void>) => void
   currentFileName?: string | null
+  onProofreadingResult?: (data: {
+    originalText: string
+    correctedText: string
+    corrections?: {
+      startIndex: number
+      endIndex: number
+      suggestion: string
+      type: string
+      explanation?: string
+    }[]
+  } | null) => void
+  replaceEditorContentRef?: React.MutableRefObject<((text: string) => void) | null>
 }) {
   const [editor] = useLexicalComposerContext()
   const contentEditableRef = useRef<HTMLDivElement>(null)
+  
+  // Set up the editor content replacement function
+  useEffect(() => {
+    if (replaceEditorContentRef) {
+      replaceEditorContentRef.current = (text: string) => {
+        editor.update(() => {
+          const root = $getRoot()
+          root.clear()
+          
+          // Try to detect if the text is markdown
+          const hasMarkdownSyntax = /^#+\s|^\*\s|\*\*.*?\*\*|__.*?__|`.*?`|\[.*?\]\(.*?\)/.test(text)
+          
+          if (hasMarkdownSyntax) {
+            // Parse as markdown and convert to Lexical nodes
+            try {
+              $convertFromMarkdownString(text, TRANSFORMERS)
+            } catch (error) {
+              console.warn("Failed to parse as markdown, inserting as plain text:", error)
+              // Fallback to plain text
+              const paragraph = $createParagraphNode()
+              const textNode = $createTextNode(text)
+              paragraph.append(textNode)
+              root.append(paragraph)
+            }
+          } else {
+            // Insert as plain text
+            const paragraph = $createParagraphNode()
+            const textNode = $createTextNode(text)
+            paragraph.append(textNode)
+            root.append(paragraph)
+          }
+        })
+      }
+    }
+  }, [editor, replaceEditorContentRef])
   
   // Auto-focus the editor on mount
   useEffect(() => {
@@ -297,6 +401,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
             <FontBackgroundToolbarPlugin />
             <div className="w-px h-6 bg-black mx-1" />
             <SummarizeToolbarPlugin />
+            <ProofreadToolbarPlugin onProofreadingResult={onProofreadingResult} />
           </div>
         )}
       </ToolbarPlugin>
