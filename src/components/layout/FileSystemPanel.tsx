@@ -8,7 +8,6 @@ import {
   Folder, 
   FolderOpen, 
   FileText, 
-  Plus, 
   MoreVertical,
   Trash2,
   Edit3,
@@ -41,7 +40,6 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   const [loading, setLoading] = useState(true)
   const [editingFile, setEditingFile] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
-  const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
 
@@ -311,7 +309,6 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     } catch (error) {
       console.error('Error creating note:', error)
     }
-    setShowCreateMenu(false)
   }
 
   // Drag and Drop handlers
@@ -553,45 +550,30 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
             <Star27 size={20} color="#000" />
             FILES
           </span>
-          <Popover open={showCreateMenu} onOpenChange={setShowCreateMenu}>
-            <PopoverTrigger asChild>
-              <Button
-                size="sm"
-                className="h-6 w-6 p-0 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-gray-100 text-black"
-              >
-                <Plus className="h-3 w-3" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent 
-              className="w-44 p-1 border-2 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
-              align="end"
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="h-7 px-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-gray-100 text-black"
+              onClick={createNewFolder}
+              title="New folder"
             >
-              <div className="space-y-1">
-                <Button
-                  size="sm"
-                  className="w-full justify-start text-left font-mono text-xs hover:bg-green-100 border-2 border-black"
-                  onClick={createNewFolder}
-                >
-                  <FolderPlus className="h-3 w-3 mr-2" />
-                  New Folder
-                </Button>
-                <Button
-                  size="sm"
-                  className="w-full justify-start text-left font-mono text-xs hover:bg-blue-100 border-2 border-black"
-                  onClick={() => {
-                    if (onNewFileClick) {
-                      onNewFileClick(createNewNote)
-                    } else {
-                      createNewNote()
-                    }
-                  }}
-                >
-                  <FilePlus className="h-3 w-3 mr-2" />
-                  New Note
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
+              <FolderPlus className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 px-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-gray-100 text-black"
+              onClick={() => {
+                if (onNewFileClick) {
+                  onNewFileClick(createNewNote)
+                } else {
+                  createNewNote()
+                }
+              }}
+              title="New note"
+            >
+              <FilePlus className="h-4 w-4" />
+            </Button>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0 pt-0 h-[calc(100%-4rem)]">
