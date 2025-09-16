@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@tailwindcss/typography";
 @import "tw-animate-css";
 @import "./components/editor/themes/editor-theme.css";
 
