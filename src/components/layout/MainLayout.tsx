@@ -21,6 +21,8 @@ export function MainLayout() {
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [currentFileId, setCurrentFileId] = useState<number | null>(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [isNotesSyncing, setIsNotesSyncing] = useState(false)
+  const [lastNotesSync, setLastNotesSync] = useState<Date | null>(null)
   
   
   // Unsaved changes management
@@ -41,6 +43,31 @@ export function MainLayout() {
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  // Track notes sync status for UI display
+  useEffect(() => {
+    const handleSyncStart = () => {
+      setIsNotesSyncing(true)
+    }
+
+    const handleSyncFinished = (event: Event) => {
+      setIsNotesSyncing(false)
+      const detail = (event as CustomEvent<{ timestamp?: number }>).detail
+      if (detail?.timestamp) {
+        setLastNotesSync(new Date(detail.timestamp))
+      } else {
+        setLastNotesSync(new Date())
+      }
+    }
+
+    window.addEventListener('notesSyncStart', handleSyncStart as EventListener)
+    window.addEventListener('notesSyncFinished', handleSyncFinished as EventListener)
+
+    return () => {
+      window.removeEventListener('notesSyncStart', handleSyncStart as EventListener)
+      window.removeEventListener('notesSyncFinished', handleSyncFinished as EventListener)
     }
   }, [])
 
@@ -242,6 +269,12 @@ export function MainLayout() {
     </div>
   )
 
+  const syncStatusText = isNotesSyncing
+    ? 'Syncing notes…'
+    : lastNotesSync
+      ? `Last synced ${lastNotesSync.toLocaleTimeString()}`
+      : 'Not synced yet'
+
   return (
     <div className="min-h-screen bg-neutral-50 font-mono">
       <div className="w-full">
@@ -301,8 +334,12 @@ export function MainLayout() {
                             {isOnline ? "ONLINE - Auto-sync active" : "OFFLINE - Changes saved locally"}
                           </p>
                         </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                    </Tooltip>
+                  </TooltipProvider>
+
+                    <div className="hidden sm:block text-xs font-mono text-gray-600 mr-2">
+                      {syncStatusText}
+                    </div>
 
                     {/* User Info */}
                     <div className="hidden sm:block text-sm font-bold text-gray-700 mr-2">

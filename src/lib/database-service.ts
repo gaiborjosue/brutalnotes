@@ -201,6 +201,7 @@ class TodoService {
       // Remove todos that are deleted and synced (or don't have server IDs)
       await db.todos
         .where('deleted')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .equals(1 as any) // Dexie needs IndexableType, not boolean
         .and(todo => !todo.serverId || todo.syncStatus === 'synced')
         .delete()

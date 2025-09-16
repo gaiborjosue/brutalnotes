@@ -75,10 +75,10 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       }, 100)
     }
 
-    window.addEventListener('notesSynced', handleNotesSynced)
+    window.addEventListener('notesSynced', handleNotesSynced as EventListener)
 
     return () => {
-      window.removeEventListener('notesSynced', handleNotesSynced)
+      window.removeEventListener('notesSynced', handleNotesSynced as EventListener)
     }
   }, [])
 

@@ -530,6 +530,7 @@ export class NotesSyncService {
   // Perform full bidirectional sync (push local changes, then pull server changes)
   static async performFullSync(): Promise<SyncResult> {
     console.log('🔄 Starting full bidirectional notes sync...')
+    window.dispatchEvent(new CustomEvent('notesSyncStart'))
 
     // First push local changes to server
     const pushResult = await this.syncNotes()
@@ -547,10 +548,14 @@ export class NotesSyncService {
 
     console.log(`🔄 Full notes sync complete:`, combinedResult)
 
+    const eventDetail = { success: combinedResult.success, timestamp: Date.now() }
+
     if (combinedResult.success) {
       console.log('🔔 Notes sync finished - emitting notesSynced event')
-      window.dispatchEvent(new CustomEvent('notesSynced'))
+      window.dispatchEvent(new CustomEvent('notesSynced', { detail: eventDetail }))
     }
+
+    window.dispatchEvent(new CustomEvent('notesSyncFinished', { detail: eventDetail }))
 
     return combinedResult
   }

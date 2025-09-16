@@ -6,25 +6,6 @@ import tailwindcss from "@tailwindcss/vite"
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  server: {
-    host: true,
-    port: 5173,
-    strictPort: false,
-    cors: {
-      origin: [
-        'http://localhost:5173',
-        'http://localhost:5174',
-        'http://localhost:3000',
-        'https://condo-budapest-projected-dna.trycloudflare.com',
-      ],
-      credentials: true,
-    },
-    hmr: {
-      clientPort: 443,
-      protocol: 'wss',
-      host: 'condo-budapest-projected-dna.trycloudflare.com',
-    },
-  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
