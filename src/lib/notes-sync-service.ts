@@ -244,9 +244,11 @@ export class NotesSyncService {
       }
 
       // Merge server notes with local data
+      const staleServerRecords: Array<{ serverId: string; clientId?: number }> = []
+
       for (const serverNote of serverNotes) {
         try {
-          const localId = await this.mergeServerNote(serverNote)
+          const localId = await this.mergeServerNote(serverNote, staleServerRecords)
           if (serverNote.serverId && localId) {
             serverIdToLocalId.set(serverNote.serverId, localId)
           }
@@ -262,6 +264,8 @@ export class NotesSyncService {
           result.errors.push(`Failed to merge note "${serverNote.title}": ${error}`)
         }
       }
+
+      await this.deleteStaleServerRecords(staleServerRecords)
 
       // Once all notes exist locally, reconnect parent/child relationships
       await this.updateLocalParentReferences(serverNotes, serverIdToLocalId, clientIdToLocalId)
@@ -282,7 +286,10 @@ export class NotesSyncService {
   }
 
   // Merge a server note with local data
-  private static async mergeServerNote(serverNote: Note): Promise<number | undefined> {
+  private static async mergeServerNote(
+    serverNote: Note,
+    staleRecords: Array<{ serverId: string; clientId?: number }>
+  ): Promise<number | undefined> {
     const serverId = serverNote.serverId
     if (!serverId) {
       throw new Error('Server note missing ID')
@@ -327,15 +334,32 @@ export class NotesSyncService {
         const localUpdatedAt = new Date(noteByPath.updatedAt)
         const serverDate = new Date(serverNote.updatedAt)
         const differentServerId = Boolean(noteByPath.serverId && noteByPath.serverId !== serverId)
+        const incomingClientId = serverNote.clientId
+        const existingClientId = noteByPath.clientId
+        const differentClientIds =
+          incomingClientId !== undefined && existingClientId !== undefined && incomingClientId !== existingClientId
 
-        if (differentServerId && localUpdatedAt >= serverDate) {
+        if (differentServerId && (differentClientIds || localUpdatedAt >= serverDate)) {
           console.log('⏭️ Skipping stale server note judged older than local copy', {
             path: normalizedPath,
             localUpdatedAt: localUpdatedAt.toISOString(),
             serverUpdatedAt: serverDate.toISOString(),
             localServerId: noteByPath.serverId,
-            incomingServerId: serverId
+            incomingServerId: serverId,
+            incomingClientId,
+            localClientId: existingClientId
           })
+
+          if (serverId) {
+            staleRecords.push({
+              serverId,
+              clientId:
+                incomingClientId !== undefined && incomingClientId !== existingClientId
+                  ? incomingClientId
+                  : undefined
+            })
+          }
+
           return noteByPath.id
         }
 
@@ -434,6 +458,31 @@ export class NotesSyncService {
       }
     } catch (error) {
       console.warn('Failed to cleanup deleted server notes:', error)
+    }
+  }
+
+  private static async deleteStaleServerRecords(
+    records: Array<{ serverId: string; clientId?: number }>
+  ): Promise<void> {
+    if (records.length === 0) {
+      return
+    }
+
+    const serverIdsNeedingDelete = Array.from(
+      new Set(
+        records
+          .map(record => record.serverId)
+          .filter((serverId): serverId is string => Boolean(serverId))
+      )
+    )
+
+    for (const serverId of serverIdsNeedingDelete) {
+      try {
+        console.log('🧹 Deleting stale server note by ID', serverId)
+        await ApiService.deleteNote(serverId)
+      } catch (error) {
+        console.warn('Failed to delete stale server note by ID:', serverId, error)
+      }
     }
   }
 
