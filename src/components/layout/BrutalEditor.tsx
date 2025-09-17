@@ -545,6 +545,15 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
                 content: contentJson,
                 updatedAt: new Date()
               })
+
+              window.dispatchEvent(
+                new CustomEvent('noteSaved', {
+                  detail: {
+                    fileId: currentDraftFileId,
+                    content: contentJson
+                  }
+                })
+              )
             } else {
               // Create new temporary note
               const fileName = `Draft-${Date.now()}.lexical`
@@ -557,6 +566,15 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
               )
               if (result.success && result.data?.id) {
                 onCurrentFileChange?.(result.data.id)
+
+                window.dispatchEvent(
+                  new CustomEvent('noteSaved', {
+                    detail: {
+                      fileId: result.data.id,
+                      content: contentJson
+                    }
+                  })
+                )
               }
             }
             onFileSaved?.()

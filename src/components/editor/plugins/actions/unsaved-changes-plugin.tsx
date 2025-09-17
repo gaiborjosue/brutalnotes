@@ -20,6 +20,8 @@ export function UnsavedChangesPlugin({
   const initialLoadRef = useRef(true)
   const fileIdRef = useRef(currentFileId)
   const previousHasUnsavedChangesRef = useRef(false)
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const isAutoSavingRef = useRef(false)
 
   // Listen for editor state changes
   useEffect(() => {
@@ -58,6 +60,39 @@ export function UnsavedChangesPlugin({
     const contentChanged = currentContent !== lastSavedContent
     setHasUnsavedChanges(contentChanged)
   }, [editorState, lastSavedContent])
+
+  useEffect(() => {
+    const clearAutoSaveTimer = () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+        autoSaveTimerRef.current = null
+      }
+    }
+
+    if (!onManualSave || currentFileId === null || !hasUnsavedChanges) {
+      clearAutoSaveTimer()
+      return
+    }
+
+    clearAutoSaveTimer()
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      if (isAutoSavingRef.current) {
+        return
+      }
+
+      isAutoSavingRef.current = true
+      try {
+        await onManualSave()
+      } catch (error) {
+        console.error('Auto-save failed:', error)
+      } finally {
+        isAutoSavingRef.current = false
+      }
+    }, 2000)
+
+    return () => clearAutoSaveTimer()
+  }, [currentFileId, hasUnsavedChanges, onManualSave, editorState])
 
   useEffect(() => {
     const handleNoteSaved = (event: Event) => {
