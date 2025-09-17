@@ -6,7 +6,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { TodoPanel } from "./TodoPanel"
 import { FileSystemPanel } from "./FileSystemPanel"
-import { PomodoroPanel } from "./PomodoroPanel"
+import { RecordingPanel } from "./RecordingPanel"
 import { BrutalEditor } from "./BrutalEditor"
 import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-changes-dialog"
 import { NoteService } from "@/lib/database-service"
@@ -24,6 +24,8 @@ export function MainLayout() {
   const [isNotesSyncing, setIsNotesSyncing] = useState(false)
   const [lastNotesSync, setLastNotesSync] = useState<Date | null>(null)
   
+  // Editor content insertion ref
+  const insertContentRef = useRef<((content: string) => void) | null>(null)
   
   // Unsaved changes management
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -262,9 +264,9 @@ export function MainLayout() {
         />
       </div>
       
-      {/* Pomodoro Panel */}
+      {/* Recording Panel */}
       <div className="h-[calc(33.333%-0.5rem)]">
-        <PomodoroPanel />
+        <RecordingPanel onInsertContent={(content: string) => insertContentRef.current?.(content)} />
       </div>
     </div>
   )
@@ -394,6 +396,7 @@ export function MainLayout() {
                            onUnsavedChangesWarning={handleUnsavedChangesWarning}
                            onCurrentFileChange={handleCurrentFileChange}
                            currentFileId={currentFileId}
+                           onInsertContent={(insertFn) => { insertContentRef.current = insertFn }}
                          />
                        </div>
               </CardContent>
