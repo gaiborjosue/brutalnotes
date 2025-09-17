@@ -139,9 +139,10 @@ interface BrutalEditorProps {
   onUnsavedChangesWarning?: (hasUnsavedChanges: boolean, saveFunction: () => Promise<void>) => void
   onCurrentFileChange?: (fileId: number | null) => void
   currentFileId?: number | null
+  onInsertContent?: (insertFunction: (content: string) => void) => void
 }
 
-export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning, onCurrentFileChange, currentFileId }: BrutalEditorProps = {}) {
+export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning, onCurrentFileChange, currentFileId, onInsertContent }: BrutalEditorProps = {}) {
   const [editorState, setEditorState] = useState<SerializedEditorState>(initialValue)
   const [currentDraftFileId, setCurrentDraftFileId] = useState<number | null>(null)
   const [currentFileName, setCurrentFileName] = useState<string | null>(null)
@@ -235,6 +236,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
               currentFileName={currentFileName}
               onProofreadingResult={setProofreadingData}
               replaceEditorContentRef={replaceEditorContentRef}
+              onInsertContent={onInsertContent}
             />
 
             <OnChangePlugin
@@ -264,7 +266,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
 
 const placeholder = `Start writing here...`
 
-function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, replaceEditorContentRef }: { 
+function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, replaceEditorContentRef, onInsertContent }: { 
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   currentDraftFileId?: number | null
@@ -283,6 +285,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
     }[]
   } | null) => void
   replaceEditorContentRef?: React.MutableRefObject<((text: string) => void) | null>
+  onInsertContent?: (insertFunction: (content: string) => void) => void
 }) {
   const [editor] = useLexicalComposerContext()
   const contentEditableRef = useRef<HTMLDivElement>(null)
@@ -321,6 +324,41 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
       }
     }
   }, [editor, replaceEditorContentRef])
+  
+  // Set up the editor content insertion function (without clearing)
+  useEffect(() => {
+    if (onInsertContent) {
+      const insertContent = (text: string) => {
+        editor.update(() => {
+          const root = $getRoot()
+          
+          // Try to detect if the text is markdown
+          const hasMarkdownSyntax = /^#+\s|^\*\s|\*\*.*?\*\*|__.*?__|`.*?`|\[.*?\]\(.*?\)/.test(text)
+          
+          if (hasMarkdownSyntax) {
+            // Parse as markdown and convert to Lexical nodes
+            try {
+              $convertFromMarkdownString(text, TRANSFORMERS)
+            } catch (error) {
+              console.warn("Failed to parse as markdown, inserting as plain text:", error)
+              // Fallback to plain text
+              const paragraph = $createParagraphNode()
+              const textNode = $createTextNode(text)
+              paragraph.append(textNode)
+              root.append(paragraph)
+            }
+          } else {
+            // Insert as plain text
+            const paragraph = $createParagraphNode()
+            const textNode = $createTextNode(text)
+            paragraph.append(textNode)
+            root.append(paragraph)
+          }
+        })
+      }
+      onInsertContent(insertContent)
+    }
+  }, [editor, onInsertContent])
   
   // Auto-focus the editor on mount
   useEffect(() => {

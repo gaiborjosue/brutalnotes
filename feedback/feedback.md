@@ -123,6 +123,42 @@ if (availability !== 'readily') {
 - Progress callbacks for model downloads
 - Detailed availability status information
 
+### 5. **Undocumented Audio/Image Processing Limits**
+**Issue**: No documented limits for multimodal input processing (audio duration, file sizes, supported formats).
+
+**Example**: Prompt API supports audio input but documentation lacks:
+- Maximum audio duration (seconds/minutes?)
+- File size limits (MB/GB?)
+- Supported audio formats
+- Quality/bitrate constraints
+
+**Impact**:
+- Developers can't plan for limitations
+- No guidance for optimal audio preparation
+- Risk of runtime failures with large files
+- Unclear token usage for multimodal inputs
+
+**Our Workaround**:
+```javascript
+// Conservative limits based on testing
+const audioConstraints = {
+  maxDuration: 60, // Start with 1 minute
+  maxFileSize: 10 * 1024 * 1024, // 10MB limit
+  preferredFormat: 'audio/webm'
+};
+
+// Monitor token usage for size estimation
+const initialUsage = session.inputUsage;
+await session.prompt([{ type: 'audio', value: audioBlob }]);
+const tokensUsed = session.inputUsage - initialUsage;
+```
+
+**Suggested API Improvement**:
+- Document maximum file sizes and durations
+- Provide `measureInputUsage()` for multimodal content
+- Return detailed error messages for oversized inputs
+- Include format compatibility information
+
 ---
 
 ## ✅ Positive Aspects
