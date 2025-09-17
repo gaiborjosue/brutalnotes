@@ -543,7 +543,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   }
 
   return (
-    <Card className="h-full border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white">
+    <Card className="h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white flex flex-col">
       <CardHeader className="border-b-4 border-black bg-blue-300 p-3">
         <CardTitle className="text-lg font-black text-black flex items-center justify-between">
           <span className="flex items-center gap-2">
@@ -576,9 +576,9 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
           </div>
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0 pt-0 h-[calc(100%-4rem)]">
-        <ScrollArea className="h-full">
-          <div className="p-3 space-y-1">
+      <CardContent className="p-0 pt-0 flex-1 min-h-0">
+        <ScrollArea className="h-full min-h-0">
+          <div className="p-3 pb-4 space-y-1">
             {loading ? (
               <div className="text-center text-gray-500 font-mono">Loading files...</div>
             ) : fileTree.length === 0 ? (

@@ -229,14 +229,14 @@ export function MainLayout() {
   }
 
   const renderSidebarPanels = () => (
-    <div className="space-y-4 h-full">
+    <div className="flex flex-col gap-2 h-full min-h-0">
       {/* Todo Panel */}
-      <div className="h-[calc(33.333%-0.5rem)]">
+      <div className="flex-1 min-h-0">
         <TodoPanel />
       </div>
       
       {/* File System Panel */}
-      <div className="h-[calc(33.333%-0.5rem)]">
+      <div className="flex-1 min-h-0">
         <FileSystemPanel 
           ref={fileSystemRef} 
           onFileClick={handleFileClick}
@@ -265,7 +265,7 @@ export function MainLayout() {
       </div>
       
       {/* Recording Panel */}
-      <div className="h-[calc(33.333%-0.5rem)]">
+      <div className="flex-1 min-h-0">
         <RecordingPanel onInsertContent={(content: string) => insertContentRef.current?.(content)} />
       </div>
     </div>
@@ -278,17 +278,17 @@ export function MainLayout() {
       : 'Not synced yet'
 
   return (
-    <div className="min-h-screen bg-neutral-50 font-mono">
-      <div className="w-full">
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-2 h-screen p-2">
+    <div className="min-h-[100dvh] bg-neutral-50 font-mono">
+      <div className="w-full h-[100dvh] p-2">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-2 h-full">
           {/* Desktop Sidebar - Hidden on tablet/mobile */}
-          <div className="hidden lg:block lg:col-span-1 space-y-2 overflow-hidden">
+          <div className="hidden lg:block lg:col-span-1 min-h-0 overflow-visible">
             {renderSidebarPanels()}
           </div>
 
           {/* Main Editor Panel */}
-          <div className="col-span-1 lg:col-span-4">
-            <Card className="h-full border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white">
+          <div className="col-span-1 lg:col-span-4 min-h-0">
+            <Card className="h-full min-h-0 border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white">
               <CardHeader className="border-b-4 border-black bg-neutral-100">
                 <CardTitle className="text-2xl font-black text-black flex items-center justify-between w-full">
                   <div className="flex items-center gap-3">
@@ -304,7 +304,7 @@ export function MainLayout() {
                       </SheetTrigger>
                       <SheetContent 
                         side="left" 
-                        className="w-96 border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white p-4"
+                        className="w-[min(90vw,22rem)] border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white p-4"
                       >
                         <VisuallyHidden>
                           <SheetTitle>Navigation Menu</SheetTitle>
@@ -387,7 +387,7 @@ export function MainLayout() {
                   </div>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-0 h-[calc(100%-5rem)] relative overflow-hidden">
+              <CardContent className="p-0 h-[calc(100%-4rem)] relative overflow-hidden min-h-0">
                        {/* Rich Text Editor */}
                        <div className="h-full max-h-full overflow-hidden">
                          <BrutalEditor 

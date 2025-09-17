@@ -311,7 +311,7 @@ Format the output as clean markdown that captures the essence of the lecture.`
   const progressPercentage = (recordingTime / MAX_RECORDING_TIME) * 100
 
   return (
-    <Card className="h-[calc(100%-0.7rem)] border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white">
+    <Card className="h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white">
       <CardHeader className="border-b-4 border-black bg-purple-300 p-3">
         <CardTitle className="text-lg font-black text-black flex items-center justify-between">
           <span className="flex items-center gap-2">
@@ -330,7 +330,7 @@ Format the output as clean markdown that captures the essence of the lecture.`
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-2 h-[calc(100%-5rem)] flex flex-col gap-2 overflow-auto">
+      <CardContent className="p-2 h-[calc(100%-3.25rem)] flex flex-col gap-2 overflow-auto min-h-0">
         {/* Recording Status */}
         <div className="mx-2">
           <div className="flex items-center justify-between text-black font-bold">
