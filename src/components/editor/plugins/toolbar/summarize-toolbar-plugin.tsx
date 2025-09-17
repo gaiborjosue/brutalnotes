@@ -146,7 +146,8 @@ function SummarizeToolbarPluginComponent() {
       console.log("🤖 Generating summary...")
       // Generate summary
       const summary = await summarizer.summarize(textContent, {
-        context: 'This is a note or document that needs to be summarized for quick reference.'
+        context: 'This is a note or document that needs to be summarized for quick reference.',
+        outputLanguage: 'en'
       })
 
       console.log("📝 Summary generated:", summary.substring(0, 100) + "...")
