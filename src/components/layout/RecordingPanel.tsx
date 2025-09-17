@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Mic, Square, Download, FileText, Circle, RotateCcw, Loader2 } from "lucide-react"
+import { Mic, Square, Download, FileText, Circle, RotateCcw, Loader2, Upload } from "lucide-react"
 import Star8 from "@/components/stars/s8"
 import { geminiModel, blobToGenerativePart } from "@/lib/firebase"
 
@@ -18,6 +18,7 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
   const [hasRecording, setHasRecording] = useState(false)
   const [audioLevels, setAudioLevels] = useState<number[]>(new Array(20).fill(0))
   const [isConverting, setIsConverting] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [generatedNotes, setGeneratedNotes] = useState<string | null>(null)
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -26,6 +27,7 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const animationRef = useRef<number | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   
   const MAX_RECORDING_TIME = 15 * 60 // 15 minutes in seconds
 
@@ -244,6 +246,60 @@ Format the output as clean markdown that captures the essence of the lecture.`
     setRecordingTime(0)
     setGeneratedNotes(null)
     setIsConverting(false)
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Check if it's an audio file - be more permissive with MIME types
+    const isAudioFile = file.type.startsWith('audio/') || 
+                       file.type === 'video/webm' || // WebM can contain audio
+                       file.type === 'application/ogg' || // Some OGG files
+                       file.type === '' && /\.(mp3|wav|ogg|m4a|aac|flac|opus|webm)$/i.test(file.name)
+    
+    if (!isAudioFile) {
+      alert('Please select an audio file (mp3, wav, ogg, m4a, aac, flac, opus, webm).')
+      return
+    }
+
+    console.log('Uploaded file:', file.name, 'MIME type:', file.type, 'Size:', file.size)
+
+    // Check file size (limit to ~100MB)
+    const maxSize = 100 * 1024 * 1024 // 100MB in bytes
+    if (file.size > maxSize) {
+      alert('File size too large. Please select a file smaller than 100MB.')
+      return
+    }
+
+    // Create blob from file
+    setAudioBlob(file)
+    
+    // Clean up previous URL
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl)
+    }
+    
+    // Create new URL for the uploaded file
+    const url = URL.createObjectURL(file)
+    setAudioUrl(url)
+    setHasRecording(true)
+    
+    // Calculate approximate duration from file size (rough estimate)
+    // This is just for display purposes, actual duration would need audio analysis
+    const estimatedDuration = Math.min(file.size / 32000, MAX_RECORDING_TIME) // Rough estimate
+    setRecordingTime(Math.floor(estimatedDuration))
+    
+    console.log('Audio file uploaded:', file.name, 'Size:', (file.size / 1024 / 1024).toFixed(2) + 'MB')
+  }
+
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click()
   }
 
   const formatTime = (seconds: number) => {
@@ -287,7 +343,7 @@ Format the output as clean markdown that captures the essence of the lecture.`
               </span>
             </div>
             <span className="text-sm font-bold text-gray-600">
-              Max: {formatTime(MAX_RECORDING_TIME)}
+              Max: {formatTime(MAX_RECORDING_TIME)} (beta)
             </span>
           </div>
         </div>
@@ -319,14 +375,24 @@ Format the output as clean markdown that captures the essence of the lecture.`
         {!hasRecording && (
           <div className="mx-2">
             {!isRecording ? (
-              <Button 
-                onClick={startRecording} 
-                className="w-full text-sm border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-green-400 hover:bg-green-500 text-black font-black py-2 h-10"
-                variant="default"
-              >
-                <Mic className="w-4 h-4 mr-2" />
-                START RECORDING
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={startRecording} 
+                  className="flex-1 text-sm border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-green-400 hover:bg-green-500 text-black font-black py-2 h-10"
+                  variant="default"
+                >
+                  <Mic className="w-4 h-4 mr-2" />
+                  START RECORDING
+                </Button>
+                <Button 
+                  onClick={triggerFileUpload} 
+                  className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-blue-400 hover:bg-blue-500 text-black font-black py-2 px-4 h-10"
+                  variant="default"
+                  title="Upload Audio File"
+                >
+                  <Upload className="w-4 h-4" />
+                </Button>
+              </div>
             ) : (
               <Button 
                 onClick={stopRecording} 
@@ -337,6 +403,15 @@ Format the output as clean markdown that captures the essence of the lecture.`
                 STOP RECORDING
               </Button>
             )}
+            
+            {/* Hidden file input for upload */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*"
+              onChange={handleFileUpload}
+              style={{ display: 'none' }}
+            />
           </div>
         )}
 
