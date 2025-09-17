@@ -45,7 +45,7 @@ export function UnsavedChangesPlugin({
   // Track content changes
   useEffect(() => {
     const currentContent = JSON.stringify(editorState.toJSON())
-    
+
     // Don't mark as unsaved on initial load
     if (initialLoadRef.current) {
       setLastSavedContent(currentContent)
@@ -58,6 +58,25 @@ export function UnsavedChangesPlugin({
     const contentChanged = currentContent !== lastSavedContent
     setHasUnsavedChanges(contentChanged)
   }, [editorState, lastSavedContent])
+
+  useEffect(() => {
+    const handleNoteSaved = (event: Event) => {
+      const detail = (event as CustomEvent<{ fileId: number | null; content: string }>).detail
+      if (!detail) return
+
+      const targetFileId = detail.fileId ?? null
+      const currentFile = fileIdRef.current ?? null
+
+      if (targetFileId === currentFile || (currentFile === null && targetFileId !== null)) {
+        setLastSavedContent(detail.content)
+        setHasUnsavedChanges(false)
+        initialLoadRef.current = false
+      }
+    }
+
+    window.addEventListener('noteSaved', handleNoteSaved as EventListener)
+    return () => window.removeEventListener('noteSaved', handleNoteSaved as EventListener)
+  }, [])
 
   // Memoize the save function to prevent unnecessary re-renders
   const saveFunction = useCallback(async () => {

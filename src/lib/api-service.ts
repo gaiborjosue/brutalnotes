@@ -409,7 +409,8 @@ class ApiService {
         is_folder: note.isFolder, // Backend expects is_folder
         parent_id: note.serverParentId || null, // Backend expects parent_id as UUID
         parent_client_id: note.parentClientId ?? note.parentId ?? null,
-        client_id: note.clientId || note.id // Backend expects client_id for mapping
+        client_id: note.clientId ?? note.id ?? null,
+        server_id: note.serverId ?? null
       })),
       client_notes_deleted: deletedClientIds,
       last_sync_timestamp: null
