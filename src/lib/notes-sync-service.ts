@@ -324,15 +324,31 @@ export class NotesSyncService {
 
       if (noteByPath?.id !== undefined) {
         const parentFromPath = await this.getParentFromPath(normalizedPath)
+        const localUpdatedAt = new Date(noteByPath.updatedAt)
+        const serverDate = new Date(serverNote.updatedAt)
+        const differentServerId = Boolean(noteByPath.serverId && noteByPath.serverId !== serverId)
+
+        if (differentServerId && localUpdatedAt >= serverDate) {
+          console.log('⏭️ Skipping stale server note judged older than local copy', {
+            path: normalizedPath,
+            localUpdatedAt: localUpdatedAt.toISOString(),
+            serverUpdatedAt: serverDate.toISOString(),
+            localServerId: noteByPath.serverId,
+            incomingServerId: serverId
+          })
+          return noteByPath.id
+        }
+
         existingNote = noteByPath
         await db.notes.update(noteByPath.id, {
           serverId: serverId,
+          clientId: serverNote.clientId ?? noteByPath.clientId,
           serverParentId: serverNote.serverParentId,
           title: serverNote.title,
           content: serverNote.content,
           path: normalizedPath,
           isFolder: serverNote.isFolder,
-          updatedAt: new Date(serverNote.updatedAt),
+          updatedAt: serverDate,
           createdAt: new Date(serverNote.createdAt),
           syncStatus: 'synced',
           deleted: false,
