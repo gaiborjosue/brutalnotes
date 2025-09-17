@@ -527,24 +527,68 @@ export class NotesSyncService {
   // FULL SYNC
   // =================
 
+  private static createEmptyResult(): SyncResult {
+    return {
+      success: true,
+      syncedCount: 0,
+      errorCount: 0,
+      errors: []
+    }
+  }
+
+  private static async shouldPullBeforePush(): Promise<boolean> {
+    try {
+      const totalNotes = await db.notes.count()
+
+      if (totalNotes === 0) {
+        // Nothing cached locally yet; default push-first behaviour works best
+        return false
+      }
+
+      const notesLinkedToServer = await db.notes.filter(note => !!note.serverId).count()
+
+      // When we have local data but none of it is associated with a server ID
+      // (typical on a fresh install that only has the seeded defaults), pull
+      // from the backend before we push anything to avoid overwriting remote
+      // content with placeholders.
+      return notesLinkedToServer === 0
+    } catch (error) {
+      console.warn('Failed to determine notes sync strategy – defaulting to push-first:', error)
+      return false
+    }
+  }
+
+  private static combineResults(...results: SyncResult[]): SyncResult {
+    return results.reduce<SyncResult>((combined, current) => ({
+      success: combined.success && current.success,
+      syncedCount: combined.syncedCount + current.syncedCount,
+      errorCount: combined.errorCount + current.errorCount,
+      errors: [...combined.errors, ...current.errors]
+    }), this.createEmptyResult())
+  }
+
   // Perform full bidirectional sync (push local changes, then pull server changes)
   static async performFullSync(): Promise<SyncResult> {
     console.log('🔄 Starting full bidirectional notes sync...')
     window.dispatchEvent(new CustomEvent('notesSyncStart'))
 
-    // First push local changes to server
-    const pushResult = await this.syncNotes()
-    
-    // Then pull server changes to local
-    const pullResult = await this.pullNotesFromServer()
+    const pullFirst = await this.shouldPullBeforePush()
+    const operationOrder = pullFirst ? 'pull-first' : 'push-first'
+    console.log(`🧭 Notes sync strategy: ${operationOrder}`)
 
-    // Combine results
-    const combinedResult: SyncResult = {
-      success: pushResult.success && pullResult.success,
-      syncedCount: pushResult.syncedCount + pullResult.syncedCount,
-      errorCount: pushResult.errorCount + pullResult.errorCount,
-      errors: [...pushResult.errors, ...pullResult.errors]
+    let pushResult = this.createEmptyResult()
+    let pullResult = this.createEmptyResult()
+
+    if (pullFirst) {
+      pullResult = await this.pullNotesFromServer()
+      pushResult = await this.syncNotes()
+    } else {
+      pushResult = await this.syncNotes()
+      pullResult = await this.pullNotesFromServer()
     }
+
+    // Combine results from both operations
+    const combinedResult = this.combineResults(pushResult, pullResult)
 
     console.log(`🔄 Full notes sync complete:`, combinedResult)
 
