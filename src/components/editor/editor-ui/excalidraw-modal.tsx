@@ -227,7 +227,7 @@ export function ExcalidrawModal({
       <DialogTrigger />
       <DialogContent
         showCloseButton={false}
-        className="h-[100vh] w-[100vw] max-w-[100vw] !max-w-none overflow-hidden p-0 pb-10 m-0 !top-0 !left-0 !translate-x-0 !translate-y-0 fixed inset-0"
+        className="h-[100dvh] w-[100svw] max-w-[100svw] !max-w-none overflow-hidden p-0 pb-10 m-0 !top-0 !left-0 !translate-x-0 !translate-y-0 fixed inset-0"
       >
         <VisuallyHidden>
           <DialogTitle>Excalidraw Drawing Canvas</DialogTitle>

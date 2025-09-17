@@ -133,7 +133,7 @@ export function TodoPanel() {
   }
 
   return (
-    <Card className="h-full border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white">
+    <Card className="h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white flex flex-col">
       <CardHeader className="border-b-4 border-black bg-yellow-300 p-3">
         <CardTitle className="text-lg font-black text-black flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -143,8 +143,8 @@ export function TodoPanel() {
 
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-3 pt-0 h-[calc(100%-4rem)]">
-        <div className="space-y-3 h-full flex flex-col">
+      <CardContent className="p-3 pt-0 flex-1 min-h-0">
+        <div className="space-y-3 h-full min-h-0 flex flex-col">
           {/* Network error display */}
           {networkError && (
             <div className="bg-red-100 border-2 border-red-500 text-red-700 px-2 py-1 text-xs font-mono rounded">
@@ -171,7 +171,7 @@ export function TodoPanel() {
           </div>
 
           {/* Todo list */}
-          <ScrollArea className="flex-1">
+          <ScrollArea className="flex-1 min-h-0">
             <div className="space-y-2">
               {loading ? (
                 <div className="text-center text-gray-500 font-mono">Loading todos...</div>
