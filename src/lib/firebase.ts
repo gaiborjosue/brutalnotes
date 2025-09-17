@@ -1,6 +1,7 @@
 // Firebase initialization for Brutal Notes
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
+import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD1cdvmYnNBPWIwa6LLC5dYrXzhaRYIJrE",
@@ -13,9 +14,17 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-
 export const firebaseApp = initializeApp(firebaseConfig);
 export const firebaseAnalytics = getAnalytics(firebaseApp);
+
+// Initialize App Check with reCAPTCHA v3 for security
+export const appCheck = initializeAppCheck(firebaseApp, {
+  provider: new ReCaptchaV3Provider('6LerqMwrAAAAAP0Vi3vZ9AOJWsy3hcJZF6MDge4c'),
+  
+  // Optional argument. If true, the SDK automatically refreshes App Check
+  // tokens as needed.
+  isTokenAutoRefreshEnabled: true
+});
 
 // --- Gemini AI Logic Integration ---
 // Import Gemini AI Logic SDK
