@@ -166,6 +166,9 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   }
 
   const startRename = (id: string, currentName: string) => {
+    if (currentName === 'temp') {
+      return
+    }
     setEditingFile(id)
     setEditingName(currentName)
   }
@@ -178,6 +181,11 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       const noteResult = await NoteService.getNoteById(noteId)
       if (noteResult.success && noteResult.data) {
         const note = noteResult.data
+        if (note.isFolder && note.title === 'temp') {
+          setEditingFile(null)
+          setEditingName("")
+          return
+        }
         let newTitle = editingName.trim()
         
         // If it's a file and doesn't end with .lexical, add it
@@ -485,7 +493,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
           {!isEditing && (
             <Popover>
               <PopoverTrigger asChild>
-                  <Button 
+                <Button 
                   size="sm" 
                   className="h-6 w-6 p-0 hover:bg-blue-300 border-2 border-black bg-white shrink-0"
                   onClick={(e) => e.stopPropagation()}
@@ -498,10 +506,11 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
                 align="end"
               >
                 <div className="space-y-1">
-                  <Button
+                <Button
                     size="sm"
                     className="w-full justify-start text-left font-mono text-xs border-2 border-black hover:bg-blue-300 bg-white"
                     onClick={() => startRename(node.id, node.name)}
+                    disabled={node.type === 'folder' && node.name === 'temp'}
                   >
                     <Edit3 className="h-3 w-3 mr-2" />
                     Rename
