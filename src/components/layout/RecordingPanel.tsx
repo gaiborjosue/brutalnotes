@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Mic, Square, Download, FileText, Circle, RotateCcw, Loader2, Upload } from "lucide-react"
 import Star8 from "@/components/stars/s8"
-import { geminiModel, blobToGenerativePart } from "@/lib/firebase"
+import { geminiModel, blobToGenerativePart, normalizeAudioMimeType } from "@/lib/firebase"
+import { FirebaseError } from "firebase/app"
 
 interface RecordingPanelProps {
   onInsertContent?: (content: string) => void
@@ -193,7 +194,9 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
     try {
       // Convert the audio blob to the format Gemini expects
       const audioPart = await blobToGenerativePart(audioBlob)
-      
+      const normalizedMimeType = normalizeAudioMimeType(audioPart.inlineData.mimeType, (audioBlob as File).name)
+      audioPart.inlineData.mimeType = normalizedMimeType
+
       // Create a detailed prompt for generating compact, relevant notes
       const prompt = `Please transcribe and convert this audio recording into structured, compact lecture notes in markdown format. 
 
@@ -208,21 +211,56 @@ Requirements:
 
 Format the output as clean markdown that captures the essence of the lecture.`
 
-      // Generate content using the Gemini model
-      const result = await geminiModel.generateContent([prompt, audioPart])
-      const generatedText = result.response.text()
+      const request = {
+        contents: [
+          {
+            role: 'user' as const,
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  data: audioPart.inlineData.data,
+                  mimeType: normalizedMimeType
+                }
+              }
+            ]
+          }
+        ]
+      }
+
+      // Generate content using the Gemini model with streaming for faster feedback
+      const result = await geminiModel.generateContentStream(request)
+
+      let generatedText = ''
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text()
+        if (chunkText) {
+          generatedText += chunkText
+        }
+      }
+
+      if (!generatedText) {
+        try {
+          const finalResponse = await result.response
+          generatedText = finalResponse.text()
+        } catch (error) {
+          console.warn('Unable to read text from streamed response', error)
+        }
+      }
       
-      if (generatedText) {
-        setGeneratedNotes(generatedText)
-        
+      const trimmedText = generatedText.trim()
+
+      if (trimmedText) {
+        setGeneratedNotes(trimmedText)
+
         // Insert the generated notes directly into the editor
         if (onInsertContent) {
           // Add some formatting to make it clear these are generated notes
-          const formattedNotes = `## 📝 Generated Lecture Notes\n\n${generatedText}\n\n---\n\n`
+          const formattedNotes = `## 📝 Generated Lecture Notes\n\n${trimmedText}\n\n---\n\n`
           onInsertContent(formattedNotes)
-          console.log('Generated notes inserted into editor:', generatedText.substring(0, 100) + '...')
+          console.log('Generated notes inserted into editor:', trimmedText.substring(0, 100) + '...')
         } else {
-          console.log('Generated notes:', generatedText)
+          console.log('Generated notes:', trimmedText)
         }
       } else {
         throw new Error('No text generated from audio')
@@ -230,6 +268,9 @@ Format the output as clean markdown that captures the essence of the lecture.`
       
     } catch (error) {
       console.error('Error converting audio to notes:', error)
+      if (error instanceof FirebaseError && error.customData) {
+        console.error('Firebase AI error details:', error.customData)
+      }
       alert('Failed to convert audio to notes. Please try again.')
     } finally {
       setIsConverting(false)
@@ -259,8 +300,9 @@ Format the output as clean markdown that captures the essence of the lecture.`
 
     // Check if it's an audio file - be more permissive with MIME types
     const isAudioFile = file.type.startsWith('audio/') || 
-                       file.type === 'video/webm' || // WebM can contain audio
+                       file.type.startsWith('video/') || // WebM/MP4 containers may report video
                        file.type === 'application/ogg' || // Some OGG files
+                       file.type === 'application/octet-stream' ||
                        file.type === '' && /\.(mp3|wav|ogg|m4a|aac|flac|opus|webm)$/i.test(file.name)
     
     if (!isAudioFile) {
@@ -277,8 +319,13 @@ Format the output as clean markdown that captures the essence of the lecture.`
       return
     }
 
+    const normalizedMimeType = normalizeAudioMimeType(file.type, file.name)
+    const normalizedBlob = file.type === normalizedMimeType
+      ? file
+      : new File([file], file.name, { type: normalizedMimeType, lastModified: file.lastModified })
+
     // Create blob from file
-    setAudioBlob(file)
+    setAudioBlob(normalizedBlob)
     
     // Clean up previous URL
     if (audioUrl) {
@@ -286,16 +333,16 @@ Format the output as clean markdown that captures the essence of the lecture.`
     }
     
     // Create new URL for the uploaded file
-    const url = URL.createObjectURL(file)
+    const url = URL.createObjectURL(normalizedBlob)
     setAudioUrl(url)
     setHasRecording(true)
     
     // Calculate approximate duration from file size (rough estimate)
     // This is just for display purposes, actual duration would need audio analysis
-    const estimatedDuration = Math.min(file.size / 32000, MAX_RECORDING_TIME) // Rough estimate
+    const estimatedDuration = Math.min(normalizedBlob.size / 32000, MAX_RECORDING_TIME) // Rough estimate
     setRecordingTime(Math.floor(estimatedDuration))
-    
-    console.log('Audio file uploaded:', file.name, 'Size:', (file.size / 1024 / 1024).toFixed(2) + 'MB')
+
+    console.log('Audio file uploaded:', file.name, 'Size:', (normalizedBlob.size / 1024 / 1024).toFixed(2) + 'MB', 'MIME:', normalizedMimeType)
   }
 
   const triggerFileUpload = () => {
@@ -408,7 +455,7 @@ Format the output as clean markdown that captures the essence of the lecture.`
             <input
               ref={fileInputRef}
               type="file"
-              accept="audio/*"
+              accept="audio/*,video/webm"
               onChange={handleFileUpload}
               style={{ display: 'none' }}
             />
