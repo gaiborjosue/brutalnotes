@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useState, useEffect, forwardRef, useImperativeHandle } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -238,7 +239,6 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     } catch (error) {
       console.error('Error creating folder:', error)
     }
-    setShowCreateMenu(false)
   }
 
   // Create new note
