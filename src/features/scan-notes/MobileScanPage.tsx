@@ -107,7 +107,7 @@ export function MobileScanPage() {
       peer.onconnectionstatechange = () => {
         setConnectionState(peer.connectionState)
         if (peer.connectionState === 'connected') {
-          setState((prev) => (prev === 'connecting' ? 'ready-to-send' : prev))
+          setState('ready-to-send')
         }
         if (['disconnected', 'failed'].includes(peer.connectionState)) {
           setError('Connection lost. Please return to Brutal Notes and restart Scan Notes.')
