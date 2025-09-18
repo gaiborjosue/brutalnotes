@@ -173,14 +173,25 @@ export function MainLayout() {
   }, [currentFileId, loadFileContent])
 
   // Check for unsaved changes before performing an action
-  const checkUnsavedChanges = (action: () => void, description: string) => {
+  const checkUnsavedChanges = (action: () => void | Promise<void>, description: string) => {
     if (hasUnsavedChanges && unsavedSaveFunction) {
       setPendingAction(() => action)
       setActionDescription(description)
       setShowUnsavedDialog(true)
       return false // Action blocked
     }
-    action()
+    try {
+      const result = action()
+      if (result && typeof (result as Promise<void>).then === 'function') {
+        ;(result as Promise<void>).catch(error => {
+          if (error !== null && error !== undefined) {
+            console.error(`Async action failed (${description}):`, error)
+          }
+        })
+      }
+    } catch (error) {
+      console.error(`Action threw synchronously (${description}):`, error)
+    }
     return true // Action performed
   }
 
