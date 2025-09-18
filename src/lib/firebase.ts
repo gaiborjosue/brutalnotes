@@ -51,22 +51,81 @@ export const geminiModel = getGenerativeModel(ai, {
   }
 });
 
+const DEFAULT_AUDIO_MIME = 'audio/webm;codecs=opus'
+
+function guessMimeFromExtension(fileName?: string): string {
+  if (!fileName) return ''
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'mp3':
+      return 'audio/mpeg'
+    case 'wav':
+      return 'audio/wav'
+    case 'ogg':
+    case 'oga':
+      return 'audio/ogg'
+    case 'm4a':
+    case 'mp4':
+      return 'audio/mp4'
+    case 'aac':
+      return 'audio/aac'
+    case 'flac':
+      return 'audio/flac'
+    case 'opus':
+      return 'audio/ogg;codecs=opus'
+    case 'webm':
+      return DEFAULT_AUDIO_MIME
+    default:
+      return ''
+  }
+}
+
+export function normalizeAudioMimeType(rawMime?: string, fileName?: string): string {
+  let normalized = (rawMime || '').trim().toLowerCase()
+
+  if (!normalized && fileName) {
+    normalized = guessMimeFromExtension(fileName)
+  }
+
+  if (!normalized || normalized === 'application/octet-stream') {
+    normalized = DEFAULT_AUDIO_MIME
+  }
+
+  if (normalized.startsWith('video/')) {
+    normalized = normalized.replace('video/', 'audio/')
+  }
+
+  if (normalized.startsWith('audio/webm') && !normalized.includes('codecs=')) {
+    normalized = `${normalized};codecs=opus`
+  }
+
+  return normalized
+}
+
 // Converts a Blob object to a Part object for Gemini
 export async function blobToGenerativePart(blob: Blob) {
-  const base64EncodedDataPromise = new Promise<string>((resolve) => {
-    const reader = new FileReader();
+  const base64EncodedDataPromise = new Promise<{ data: string; mime?: string }>((resolve) => {
+    const reader = new FileReader()
     reader.onloadend = () => {
-      const result = reader.result as string;
-      // Split to remove the data URL prefix (data:audio/webm;base64,)
-      resolve(result.split(',')[1]);
-    };
-    reader.readAsDataURL(blob);
-  });
-  
+      const result = reader.result as string
+      const [metadata, data] = result.split(',')
+      const mimeMatch = metadata?.match(/^data:(.*);base64$/)
+      resolve({
+        data: data ?? '',
+        mime: mimeMatch?.[1]
+      })
+    }
+    reader.readAsDataURL(blob)
+  })
+
+  const { data, mime } = await base64EncodedDataPromise
+  const fileName = (blob as File).name ?? undefined
+  const mimeType = normalizeAudioMimeType(mime || blob.type, fileName)
+
   return {
-    inlineData: { 
-      data: await base64EncodedDataPromise, 
-      mimeType: blob.type 
+    inlineData: {
+      data,
+      mimeType
     },
-  };
+  }
 }
