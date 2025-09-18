@@ -144,9 +144,10 @@ interface BrutalEditorProps {
   onCurrentFileChange?: (fileId: number | null) => void
   currentFileId?: number | null
   onInsertContent?: (insertFunction: (content: string) => void) => void
+  onReplaceContent?: (replaceFunction: ((content: string) => void) | null) => void
 }
 
-export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning, onCurrentFileChange, currentFileId, onInsertContent }: BrutalEditorProps = {}) {
+export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning, onCurrentFileChange, currentFileId, onInsertContent, onReplaceContent }: BrutalEditorProps = {}) {
   const [editorState, setEditorState] = useState<SerializedEditorState>(initialValue)
   const [currentDraftFileId, setCurrentDraftFileId] = useState<number | null>(null)
   const [currentFileName, setCurrentFileName] = useState<string | null>(null)
@@ -241,6 +242,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
               onProofreadingResult={setProofreadingData}
               replaceEditorContentRef={replaceEditorContentRef}
               onInsertContent={onInsertContent}
+              onReplaceContent={onReplaceContent}
             />
 
             <OnChangePlugin
@@ -270,7 +272,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
 
 const placeholder = `Start writing here...`
 
-function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, replaceEditorContentRef, onInsertContent }: { 
+function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, replaceEditorContentRef, onInsertContent, onReplaceContent }: { 
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   currentDraftFileId?: number | null
@@ -290,44 +292,52 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
   } | null) => void
   replaceEditorContentRef?: React.MutableRefObject<((text: string) => void) | null>
   onInsertContent?: (insertFunction: (content: string) => void) => void
+  onReplaceContent?: (replaceFunction: ((content: string) => void) | null) => void
 }) {
   const [editor] = useLexicalComposerContext()
   const contentEditableRef = useRef<HTMLDivElement>(null)
   
   // Set up the editor content replacement function
   useEffect(() => {
-    if (replaceEditorContentRef) {
-      replaceEditorContentRef.current = (text: string) => {
-        editor.update(() => {
-          const root = $getRoot()
-          root.clear()
-          
-          // Try to detect if the text is markdown
-          const hasMarkdownSyntax = /^#+\s|^\*\s|\*\*.*?\*\*|__.*?__|`.*?`|\[.*?\]\(.*?\)/.test(text)
-          
-          if (hasMarkdownSyntax) {
-            // Parse as markdown and convert to Lexical nodes
-            try {
-              $convertFromMarkdownString(text, TRANSFORMERS)
-            } catch (error) {
-              console.warn("Failed to parse as markdown, inserting as plain text:", error)
-              // Fallback to plain text
-              const paragraph = $createParagraphNode()
-              const textNode = $createTextNode(text)
-              paragraph.append(textNode)
-              root.append(paragraph)
-            }
-          } else {
-            // Insert as plain text
+    if (!replaceEditorContentRef) {
+      onReplaceContent?.(null)
+      return
+    }
+
+    const replaceFn = (text: string) => {
+      editor.update(() => {
+        const root = $getRoot()
+        root.clear()
+
+        const hasMarkdownSyntax = /^#+\s|^\*\s|\*\*.*?\*\*|__.*?__|`.*?`|\[.*?\]\(.*?\)/.test(text)
+
+        if (hasMarkdownSyntax) {
+          try {
+            $convertFromMarkdownString(text, TRANSFORMERS)
+          } catch (error) {
+            console.warn("Failed to parse as markdown, inserting as plain text:", error)
             const paragraph = $createParagraphNode()
             const textNode = $createTextNode(text)
             paragraph.append(textNode)
             root.append(paragraph)
           }
-        })
-      }
+        } else {
+          const paragraph = $createParagraphNode()
+          const textNode = $createTextNode(text)
+          paragraph.append(textNode)
+          root.append(paragraph)
+        }
+      })
     }
-  }, [editor, replaceEditorContentRef])
+
+    replaceEditorContentRef.current = replaceFn
+    onReplaceContent?.(replaceFn)
+
+    return () => {
+      replaceEditorContentRef.current = null
+      onReplaceContent?.(null)
+    }
+  }, [editor, replaceEditorContentRef, onReplaceContent])
   
   // Set up the editor content insertion function (without clearing)
   useEffect(() => {

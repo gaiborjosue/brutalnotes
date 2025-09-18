@@ -6,6 +6,7 @@ import { AuthContainer } from './components/auth/AuthContainer'
 import { AuthLoader } from './components/auth/AuthLoader'
 import SyncService from './lib/sync-service'
 import NotesSyncService from './lib/notes-sync-service'
+import { MobileScanPage } from './features/scan-notes/MobileScanPage'
 
 // Protected App Component (only renders when authenticated)
 function ProtectedApp() {
@@ -76,6 +77,12 @@ function AppContent() {
 
 // Main App with Auth Provider
 function App() {
+  const isMobileScanRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/scan')
+
+  if (isMobileScanRoute) {
+    return <MobileScanPage />
+  }
+
   return (
     <AuthProvider>
       <AppContent />

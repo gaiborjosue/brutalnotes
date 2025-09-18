@@ -29,14 +29,25 @@ class ApiService {
   }
 
   // Generic API request handler
-  private static async makeRequest<T>(
-    endpoint: string, 
+  static async makeRequest<T>(
+    endpoint: string,
     method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
     body?: any,
-    timeout: number = 10000
+    timeout: number = 10000,
+    options?: {
+      authenticated?: boolean
+      headers?: Record<string, string>
+    }
   ): Promise<ApiResult<T>> {
     try {
-      const headers = await this.getAuthHeader()
+      const needsAuth = options?.authenticated !== false
+      const baseHeaders = needsAuth
+        ? await this.getAuthHeader()
+        : { 'Content-Type': 'application/json' }
+      const headers = {
+        ...baseHeaders,
+        ...(options?.headers ?? {}),
+      }
       
       // Create abort controller for timeout
       const controller = new AbortController()
@@ -139,7 +150,7 @@ class ApiService {
       }
       return { success: true, data: mappedTodo }
     }
-    return result
+    return { success: false, error: result.error || 'Failed to create todo' }
   }
 
   // Update todo on backend
@@ -157,7 +168,7 @@ class ApiService {
       }
       return { success: true, data: mappedTodo }
     }
-    return result
+    return { success: false, error: result.error || 'Failed to update todo' }
   }
 
   // Delete todo on backend
@@ -180,7 +191,7 @@ class ApiService {
       }
       return { success: true, data: mappedTodo }
     }
-    return result
+    return { success: false, error: result.error || 'Failed to toggle todo' }
   }
 
   // =================

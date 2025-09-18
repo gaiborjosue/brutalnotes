@@ -10,9 +10,10 @@ import { RecordingPanel } from "./RecordingPanel"
 import { BrutalEditor } from "./BrutalEditor"
 import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-changes-dialog"
 import { NoteService } from "@/lib/database-service"
-import { Camera, Menu, LogOut, Wifi, WifiOff } from "lucide-react"
+import { Menu, LogOut, Wifi, WifiOff } from "lucide-react"
 import Star24 from "@/components/stars/s24"
 import { useAuth } from "@/contexts/AuthContext"
+import { ScanNotesPopover } from "@/features/scan-notes/ScanNotesPopover"
 
 export function MainLayout() {
   const { user, signOut } = useAuth()
@@ -24,8 +25,9 @@ export function MainLayout() {
   const [isNotesSyncing, setIsNotesSyncing] = useState(false)
   const [lastNotesSync, setLastNotesSync] = useState<Date | null>(null)
   
-  // Editor content insertion ref
+  // Editor content insertion/ref replacement helpers
   const insertContentRef = useRef<((content: string) => void) | null>(null)
+  const replaceContentRef = useRef<((content: string) => void) | null>(null)
   
   // Unsaved changes management
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -73,10 +75,6 @@ export function MainLayout() {
     }
   }, [])
 
-  const handleCameraCapture = () => {
-    alert("📸 Camera feature coming soon! This will allow you to capture paper notes and convert them to digital text.")
-  }
-
   const handleFileSaved = async () => {
     // Refresh the file system panel when a file is saved
     if (fileSystemRef.current?.refreshFileTree) {
@@ -92,6 +90,17 @@ export function MainLayout() {
   const handleUnsavedChangesWarning = useCallback((unsavedChanges: boolean, saveFunction: () => Promise<void>) => {
     setHasUnsavedChanges(unsavedChanges)
     setUnsavedSaveFunction(() => saveFunction)
+  }, [])
+
+  const handleScannedNotesGenerated = useCallback((markdown: string) => {
+    if (replaceContentRef.current) {
+      replaceContentRef.current(markdown)
+      setCurrentFileId(null)
+      setHasUnsavedChanges(true)
+      setUnsavedSaveFunction(null)
+    } else {
+      console.warn('Editor is not ready to receive scanned notes.')
+    }
   }, [])
 
   // Handle current file changes to track active file
@@ -360,21 +369,7 @@ export function MainLayout() {
                     </div>
                     
                     <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            onClick={handleCameraCapture}
-                            className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-purple-400 hover:bg-purple-500 text-black font-black brutal-hover h-8 px-4"
-                            size="sm"
-                          >
-                            <Camera className="h-4 w-4" />
-                            <span className="hidden md:inline ml-2">Scan Notes</span>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" avoidCollisions={false} sideOffset={4}>
-                          <p className="font-mono font-black">PAPER → DIGITAL</p>
-                        </TooltipContent>
-                      </Tooltip>
+                      <ScanNotesPopover onCreateNote={handleScannedNotesGenerated} />
                     </TooltipProvider>
 
                     {/* Logout Button */}
@@ -408,6 +403,7 @@ export function MainLayout() {
                            onCurrentFileChange={handleCurrentFileChange}
                            currentFileId={currentFileId}
                            onInsertContent={(insertFn) => { insertContentRef.current = insertFn }}
+                           onReplaceContent={(replaceFn) => { replaceContentRef.current = replaceFn ?? null }}
                          />
                        </div>
               </CardContent>
