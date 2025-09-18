@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
-import { $getRoot } from "lexical"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -77,6 +76,7 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
       const notePath = `/temp/${noteTitle}`
 
       let result
+      let savedNoteId: number | null = currentDraftFileId ?? null
 
       // If we have a current draft file, update it with the new name
       if (currentDraftFileId) {
@@ -95,6 +95,9 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
           false, // isFolder
           tempFolderId
         )
+        if (result.success && result.data?.id) {
+          savedNoteId = result.data.id
+        }
       }
 
       if (result.success) {
@@ -102,15 +105,19 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
         setIsOpen(false)
         setFileName("")
         onFileSaved?.() // Refresh file tree
-        
-        // Clear current draft file tracking since we've manually saved
-        onCurrentFileChange?.(null)
-        
-        // Clear the editor for new content
-        editor.update(() => {
-          const root = $getRoot()
-          root.clear()
-        })
+
+        if (savedNoteId !== null) {
+          onCurrentFileChange?.(savedNoteId)
+        }
+
+        window.dispatchEvent(
+          new CustomEvent('noteSaved', {
+            detail: {
+              fileId: savedNoteId,
+              content: contentJson
+            }
+          })
+        )
       } else {
         console.error('❌ Failed to save file:', result.error)
         alert('Failed to save file. Please try again.')

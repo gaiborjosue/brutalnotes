@@ -244,9 +244,11 @@ export class NotesSyncService {
       }
 
       // Merge server notes with local data
+      const staleServerRecords: Array<{ serverId: string; clientId?: number }> = []
+
       for (const serverNote of serverNotes) {
         try {
-          const localId = await this.mergeServerNote(serverNote)
+          const localId = await this.mergeServerNote(serverNote, staleServerRecords)
           if (serverNote.serverId && localId) {
             serverIdToLocalId.set(serverNote.serverId, localId)
           }
@@ -262,6 +264,8 @@ export class NotesSyncService {
           result.errors.push(`Failed to merge note "${serverNote.title}": ${error}`)
         }
       }
+
+      await this.deleteStaleServerRecords(staleServerRecords)
 
       // Once all notes exist locally, reconnect parent/child relationships
       await this.updateLocalParentReferences(serverNotes, serverIdToLocalId, clientIdToLocalId)
@@ -282,7 +286,10 @@ export class NotesSyncService {
   }
 
   // Merge a server note with local data
-  private static async mergeServerNote(serverNote: Note): Promise<number | undefined> {
+  private static async mergeServerNote(
+    serverNote: Note,
+    staleRecords: Array<{ serverId: string; clientId?: number }>
+  ): Promise<number | undefined> {
     const serverId = serverNote.serverId
     if (!serverId) {
       throw new Error('Server note missing ID')
@@ -324,15 +331,48 @@ export class NotesSyncService {
 
       if (noteByPath?.id !== undefined) {
         const parentFromPath = await this.getParentFromPath(normalizedPath)
+        const localUpdatedAt = new Date(noteByPath.updatedAt)
+        const serverDate = new Date(serverNote.updatedAt)
+        const differentServerId = Boolean(noteByPath.serverId && noteByPath.serverId !== serverId)
+        const incomingClientId = serverNote.clientId
+        const existingClientId = noteByPath.clientId
+        const differentClientIds =
+          incomingClientId !== undefined && existingClientId !== undefined && incomingClientId !== existingClientId
+
+        if (differentServerId && (differentClientIds || localUpdatedAt >= serverDate)) {
+          console.log('⏭️ Skipping stale server note judged older than local copy', {
+            path: normalizedPath,
+            localUpdatedAt: localUpdatedAt.toISOString(),
+            serverUpdatedAt: serverDate.toISOString(),
+            localServerId: noteByPath.serverId,
+            incomingServerId: serverId,
+            incomingClientId,
+            localClientId: existingClientId
+          })
+
+          if (serverId) {
+            staleRecords.push({
+              serverId,
+              clientId:
+                incomingClientId !== undefined && incomingClientId !== existingClientId
+                  ? incomingClientId
+                  : undefined
+            })
+          }
+
+          return noteByPath.id
+        }
+
         existingNote = noteByPath
         await db.notes.update(noteByPath.id, {
           serverId: serverId,
+          clientId: serverNote.clientId ?? noteByPath.clientId,
           serverParentId: serverNote.serverParentId,
           title: serverNote.title,
           content: serverNote.content,
           path: normalizedPath,
           isFolder: serverNote.isFolder,
-          updatedAt: new Date(serverNote.updatedAt),
+          updatedAt: serverDate,
           createdAt: new Date(serverNote.createdAt),
           syncStatus: 'synced',
           deleted: false,
@@ -418,6 +458,31 @@ export class NotesSyncService {
       }
     } catch (error) {
       console.warn('Failed to cleanup deleted server notes:', error)
+    }
+  }
+
+  private static async deleteStaleServerRecords(
+    records: Array<{ serverId: string; clientId?: number }>
+  ): Promise<void> {
+    if (records.length === 0) {
+      return
+    }
+
+    const serverIdsNeedingDelete = Array.from(
+      new Set(
+        records
+          .map(record => record.serverId)
+          .filter((serverId): serverId is string => Boolean(serverId))
+      )
+    )
+
+    for (const serverId of serverIdsNeedingDelete) {
+      try {
+        console.log('🧹 Deleting stale server note by ID', serverId)
+        await ApiService.deleteNote(serverId)
+      } catch (error) {
+        console.warn('Failed to delete stale server note by ID:', serverId, error)
+      }
     }
   }
 
@@ -527,24 +592,68 @@ export class NotesSyncService {
   // FULL SYNC
   // =================
 
+  private static createEmptyResult(): SyncResult {
+    return {
+      success: true,
+      syncedCount: 0,
+      errorCount: 0,
+      errors: []
+    }
+  }
+
+  private static async shouldPullBeforePush(): Promise<boolean> {
+    try {
+      const totalNotes = await db.notes.count()
+
+      if (totalNotes === 0) {
+        // Nothing cached locally yet; default push-first behaviour works best
+        return false
+      }
+
+      const notesLinkedToServer = await db.notes.filter(note => !!note.serverId).count()
+
+      // When we have local data but none of it is associated with a server ID
+      // (typical on a fresh install that only has the seeded defaults), pull
+      // from the backend before we push anything to avoid overwriting remote
+      // content with placeholders.
+      return notesLinkedToServer === 0
+    } catch (error) {
+      console.warn('Failed to determine notes sync strategy – defaulting to push-first:', error)
+      return false
+    }
+  }
+
+  private static combineResults(...results: SyncResult[]): SyncResult {
+    return results.reduce<SyncResult>((combined, current) => ({
+      success: combined.success && current.success,
+      syncedCount: combined.syncedCount + current.syncedCount,
+      errorCount: combined.errorCount + current.errorCount,
+      errors: [...combined.errors, ...current.errors]
+    }), this.createEmptyResult())
+  }
+
   // Perform full bidirectional sync (push local changes, then pull server changes)
   static async performFullSync(): Promise<SyncResult> {
     console.log('🔄 Starting full bidirectional notes sync...')
     window.dispatchEvent(new CustomEvent('notesSyncStart'))
 
-    // First push local changes to server
-    const pushResult = await this.syncNotes()
-    
-    // Then pull server changes to local
-    const pullResult = await this.pullNotesFromServer()
+    const pullFirst = await this.shouldPullBeforePush()
+    const operationOrder = pullFirst ? 'pull-first' : 'push-first'
+    console.log(`🧭 Notes sync strategy: ${operationOrder}`)
 
-    // Combine results
-    const combinedResult: SyncResult = {
-      success: pushResult.success && pullResult.success,
-      syncedCount: pushResult.syncedCount + pullResult.syncedCount,
-      errorCount: pushResult.errorCount + pullResult.errorCount,
-      errors: [...pushResult.errors, ...pullResult.errors]
+    let pushResult = this.createEmptyResult()
+    let pullResult = this.createEmptyResult()
+
+    if (pullFirst) {
+      pullResult = await this.pullNotesFromServer()
+      pushResult = await this.syncNotes()
+    } else {
+      pushResult = await this.syncNotes()
+      pullResult = await this.pullNotesFromServer()
     }
+
+    // Combine results from both operations
+    const combinedResult = this.combineResults(pushResult, pullResult)
 
     console.log(`🔄 Full notes sync complete:`, combinedResult)
 

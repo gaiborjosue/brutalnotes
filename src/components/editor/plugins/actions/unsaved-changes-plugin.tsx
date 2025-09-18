@@ -20,6 +20,8 @@ export function UnsavedChangesPlugin({
   const initialLoadRef = useRef(true)
   const fileIdRef = useRef(currentFileId)
   const previousHasUnsavedChangesRef = useRef(false)
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const isAutoSavingRef = useRef(false)
 
   // Listen for editor state changes
   useEffect(() => {
@@ -45,7 +47,7 @@ export function UnsavedChangesPlugin({
   // Track content changes
   useEffect(() => {
     const currentContent = JSON.stringify(editorState.toJSON())
-    
+
     // Don't mark as unsaved on initial load
     if (initialLoadRef.current) {
       setLastSavedContent(currentContent)
@@ -58,6 +60,58 @@ export function UnsavedChangesPlugin({
     const contentChanged = currentContent !== lastSavedContent
     setHasUnsavedChanges(contentChanged)
   }, [editorState, lastSavedContent])
+
+  useEffect(() => {
+    const clearAutoSaveTimer = () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+        autoSaveTimerRef.current = null
+      }
+    }
+
+    if (!onManualSave || currentFileId === null || !hasUnsavedChanges) {
+      clearAutoSaveTimer()
+      return
+    }
+
+    clearAutoSaveTimer()
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      if (isAutoSavingRef.current) {
+        return
+      }
+
+      isAutoSavingRef.current = true
+      try {
+        await onManualSave()
+      } catch (error) {
+        console.error('Auto-save failed:', error)
+      } finally {
+        isAutoSavingRef.current = false
+      }
+    }, 2000)
+
+    return () => clearAutoSaveTimer()
+  }, [currentFileId, hasUnsavedChanges, onManualSave, editorState])
+
+  useEffect(() => {
+    const handleNoteSaved = (event: Event) => {
+      const detail = (event as CustomEvent<{ fileId: number | null; content: string }>).detail
+      if (!detail) return
+
+      const targetFileId = detail.fileId ?? null
+      const currentFile = fileIdRef.current ?? null
+
+      if (targetFileId === currentFile || (currentFile === null && targetFileId !== null)) {
+        setLastSavedContent(detail.content)
+        setHasUnsavedChanges(false)
+        initialLoadRef.current = false
+      }
+    }
+
+    window.addEventListener('noteSaved', handleNoteSaved as EventListener)
+    return () => window.removeEventListener('noteSaved', handleNoteSaved as EventListener)
+  }, [])
 
   // Memoize the save function to prevent unnecessary re-renders
   const saveFunction = useCallback(async () => {
