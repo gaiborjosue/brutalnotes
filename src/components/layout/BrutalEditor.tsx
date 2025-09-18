@@ -410,7 +410,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
       {/* Brutal Toolbar */}
       <ToolbarPlugin>
         {({ blockType }) => (
-          <div className="flex gap-2 p-3 border-b-4 border-black bg-neutral-200 overflow-auto [&_button]:!border-2 [&_button]:!border-black [&_button]:!shadow-[2px_2px_0px_0px_#000] [&_button]:!bg-white [&_button:hover]:!translate-x-1 [&_button:hover]:!translate-y-1 [&_button:hover]:!shadow-none [&_button]:!font-black [&_button]:!text-black [&_button[aria-pressed='true']]:!bg-black [&_button[aria-pressed='true']]:!text-white disabled:[&_button]:!opacity-50 disabled:[&_button]:!bg-gray-200 [&_[role='combobox']]:!border-2 [&_[role='combobox']]:!border-black [&_[role='combobox']]:!shadow-[2px_2px_0px_0px_#000] [&_[role='combobox']]:!bg-white [&_[role='combobox']]:!font-black [&_[role='combobox']]:!text-black">
+          <div className="flex flex-nowrap items-center gap-1 p-2 border-b-4 border-black bg-neutral-200 whitespace-nowrap overflow-hidden text-xs [&_button]:!border-2 [&_button]:!border-black [&_button]:!shadow-[2px_2px_0px_0px_#000] [&_button]:!bg-white [&_button]:!h-8 [&_button]:!px-2 [&_button:hover]:!translate-x-1 [&_button:hover]:!translate-y-1 [&_button:hover]:!shadow-none [&_button]:!font-black [&_button]:!text-black [&_button[aria-pressed='true']]:!bg-black [&_button[aria-pressed='true']]:!text-white [&_svg]:h-3 [&_svg]:w-3 disabled:[&_button]:!opacity-50 disabled:[&_button]:!bg-gray-200 [&_[role='combobox']]:!border-2 [&_[role='combobox']]:!border-black [&_[role='combobox']]:!shadow-[2px_2px_0px_0px_#000] [&_[role='combobox']]:!bg-white [&_[role='combobox']]:!font-black [&_[role='combobox']]:!text-black [&_[role='combobox']]:!h-8 [&_[role='combobox']]:!px-2 [&_[role='combobox']]:text-xs">
             <BlockFormatDropDown>
               <FormatParagraph />
               <FormatHeading levels={["h1", "h2", "h3"]} />
@@ -429,18 +429,18 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
               <InsertEquation />
               <InsertPageBreak />
             </BlockInsertPlugin>
-            <div className="w-px h-6 bg-black mx-1" />
+            <div className="w-px h-5 bg-black mx-1" />
             <HistoryToolbarPlugin />
-            <div className="w-px h-6 bg-black mx-1" />
+            <div className="w-px h-5 bg-black mx-1" />
             <FontFormatToolbarPlugin format="bold" />
             <FontFormatToolbarPlugin format="italic" />
             <FontFormatToolbarPlugin format="underline" />
             <FontFormatToolbarPlugin format="strikethrough" />
-            <div className="w-px h-6 bg-black mx-1" />
+            <div className="w-px h-5 bg-black mx-1" />
             <FontSizeToolbarPlugin />
-            <div className="w-px h-6 bg-black mx-1" />
+            <div className="w-px h-5 bg-black mx-1" />
             <ElementFormatToolbarPlugin />
-            <div className="w-px h-6 bg-black mx-1" />
+            <div className="w-px h-5 bg-black mx-1" />
             <FontColorToolbarPlugin />
             <FontBackgroundToolbarPlugin />
             <div className="w-px h-6 bg-black mx-1" />
