@@ -1,121 +1,226 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import ScanSessionService, {
-  type ScanSessionCreateResult,
-  type CandidateBatchResult,
-} from '@/lib/scan-session-service'
+import ScanSessionService, { type ScanSessionCreateResult, type UploadFetchResult } from '@/lib/scan-session-service'
 
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-]
-
-type HostSessionState = 'idle' | 'creating' | 'ready' | 'connecting' | 'connected' | 'receiving' | 'completed' | 'error'
+type HostSessionState =
+  | 'idle'
+  | 'creating'
+  | 'waiting_upload'
+  | 'processing'
+  | 'completed'
+  | 'error'
 
 type HostScanSessionResult = {
   sessionInfo: ScanSessionCreateResult | null
   qrCodeDataUrl: string | null
   status: HostSessionState
-  connectionState: RTCPeerConnectionState | 'closed'
   error: string | null
   receivedFileName: string | null
-  bytesReceived: number
-  totalBytesExpected: number
   restart: () => Promise<void>
   closeSession: () => Promise<void>
 }
 
-interface FileMetadata {
-  name: string
-  size: number
-  mimeType?: string
-}
-
-const CHUNK_POLL_INTERVAL = 1500
-
 interface HostScanSessionOptions {
-  onImageReady?: (file: File) => Promise<void> | void
+  onImageReady?: (
+    file: File,
+    context?: {
+      base64Data: string
+      mimeType: string
+    }
+  ) => Promise<void> | void
 }
 
-export function useHostScanSession(isOpen: boolean, options: HostScanSessionOptions = {}): HostScanSessionResult {
+const POLL_INTERVAL_MS = 2000
+const MAX_POLL_DURATION_MS = 5 * 60 * 1000
+
+export function useHostScanSession(isActive: boolean, options: HostScanSessionOptions = {}): HostScanSessionResult {
   const [sessionInfo, setSessionInfo] = useState<ScanSessionCreateResult | null>(null)
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null)
   const [status, setStatus] = useState<HostSessionState>('idle')
-  const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | 'closed'>('closed')
   const [error, setError] = useState<string | null>(null)
   const [receivedFileName, setReceivedFileName] = useState<string | null>(null)
-  const [bytesReceived, setBytesReceived] = useState<number>(0)
-  const [totalBytesExpected, setTotalBytesExpected] = useState<number>(0)
 
-  const peerRef = useRef<RTCPeerConnection | null>(null)
-  const dataChannelRef = useRef<RTCDataChannel | null>(null)
-  const answerPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const candidatePollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const metadataRef = useRef<FileMetadata | null>(null)
-  const pendingChunksRef = useRef<Uint8Array[]>([])
-  const isCleaningUpRef = useRef(false)
   const sessionInfoRef = useRef<ScanSessionCreateResult | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollStartedAtRef = useRef<number | null>(null)
+  const isCleaningUpRef = useRef(false)
+  const isPollInFlightRef = useRef(false)
+  const isProcessingUploadRef = useRef(false)
 
-  useEffect(() => {
-    sessionInfoRef.current = sessionInfo
-  }, [sessionInfo])
+  const clearPoll = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+      pollStartedAtRef.current = null
+    }
+  }, [])
 
   const cleanup = useCallback(async () => {
     if (isCleaningUpRef.current) {
       return
     }
     isCleaningUpRef.current = true
-
-    if (answerPollRef.current) {
-      clearInterval(answerPollRef.current)
-      answerPollRef.current = null
-    }
-    if (candidatePollRef.current) {
-      clearInterval(candidatePollRef.current)
-      candidatePollRef.current = null
-    }
-
-    dataChannelRef.current?.close()
-    dataChannelRef.current = null
-
-    if (peerRef.current) {
-      peerRef.current.onicecandidate = null
-      peerRef.current.onconnectionstatechange = null
-      peerRef.current.close()
-      peerRef.current = null
-    }
-
-    metadataRef.current = null
-    pendingChunksRef.current = []
-    setBytesReceived(0)
-    setTotalBytesExpected(0)
-    isCleaningUpRef.current = false
-  }, [])
-
-  const completeRemoteSession = useCallback(async () => {
-    const info = sessionInfoRef.current
-    if (!info) {
-      return
-    }
-    try {
-      await ScanSessionService.completeSession(info.sessionId, info.hostKey, 'host')
-    } catch (completionError) {
-      console.warn('Failed to mark scan session complete', completionError)
-    }
-  }, [])
-
-  const resetState = useCallback(async () => {
-    await cleanup()
+    clearPoll()
     setSessionInfo(null)
     setQrCodeDataUrl(null)
-    setStatus('idle')
-    setConnectionState('closed')
-    setError(null)
     setReceivedFileName(null)
-    setBytesReceived(0)
-    setTotalBytesExpected(0)
+    setStatus('idle')
+    setError(null)
+    isPollInFlightRef.current = false
+    isProcessingUploadRef.current = false
+    isCleaningUpRef.current = false
+  }, [clearPoll])
+
+  const closeSession = useCallback(async () => {
+    const activeSession = sessionInfoRef.current
+    if (!activeSession) {
+      await cleanup()
+      return
+    }
+
+    try {
+      await ScanSessionService.completeSession(activeSession.sessionId, activeSession.hostKey, false)
+    } catch (err) {
+      console.warn('Failed to mark scan session complete', err)
+    } finally {
+      await cleanup()
+    }
   }, [cleanup])
+
+  const convertUploadToFile = useCallback(async (
+    upload: UploadFetchResult
+  ): Promise<{ file: File; base64Data: string; mimeType: string }> => {
+    const mimeType = upload.mimeType || 'application/octet-stream'
+    const base64Payload = upload.base64Data.includes(',')
+      ? upload.base64Data.split(',').pop() ?? ''
+      : upload.base64Data
+    const sanitizedBase64 = base64Payload.replace(/\s/g, '')
+    if (!sanitizedBase64) {
+      throw new Error('Uploaded image data was empty')
+    }
+
+    const padRemainder = sanitizedBase64.length % 4
+    const normalizedBase64 = padRemainder === 0 ? sanitizedBase64 : sanitizedBase64.padEnd(sanitizedBase64.length + (4 - padRemainder), '=')
+
+    const dataUrl = `data:${mimeType};base64,${normalizedBase64}`
+
+    try {
+      const response = await fetch(dataUrl)
+      if (!response.ok) {
+        throw new Error(`Failed to rebuild image: ${response.status}`)
+      }
+      const blob = await response.blob()
+      return {
+        file: new File([blob], upload.fileName, { type: mimeType, lastModified: Date.now() }),
+        base64Data: normalizedBase64,
+        mimeType,
+      }
+    } catch (firstError) {
+      try {
+        const decodeBase64 = (data: string): string => {
+          if (typeof window !== 'undefined' && typeof window.atob === 'function') {
+            return window.atob(data)
+          }
+          if (typeof atob === 'function') {
+            return atob(data)
+          }
+          throw new Error('Base64 decoding is not supported in this environment')
+        }
+
+        const byteString = decodeBase64(normalizedBase64)
+        const buffer = new Uint8Array(byteString.length)
+        for (let i = 0; i < byteString.length; i += 1) {
+          buffer[i] = byteString.charCodeAt(i)
+        }
+        const blob = new Blob([buffer], { type: mimeType })
+        return {
+          file: new File([blob], upload.fileName, { type: mimeType, lastModified: Date.now() }),
+          base64Data: normalizedBase64,
+          mimeType,
+        }
+      } catch (fallbackError) {
+        const error = fallbackError instanceof Error ? fallbackError : firstError
+        throw error instanceof Error ? error : new Error('Failed to rebuild uploaded file')
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    sessionInfoRef.current = sessionInfo
+  }, [sessionInfo])
+
+  const processUploadedImage = useCallback(
+    async (upload: UploadFetchResult) => {
+      setStatus('processing')
+      setReceivedFileName(upload.fileName)
+
+      try {
+        const { file, base64Data, mimeType } = await convertUploadToFile(upload)
+        if (options.onImageReady) {
+          await options.onImageReady(file, { base64Data, mimeType })
+        }
+        const activeSession = sessionInfoRef.current
+        if (activeSession?.hostKey) {
+          await ScanSessionService.completeSession(upload.sessionId, activeSession.hostKey, false)
+        }
+        setStatus('completed')
+      } catch (err) {
+        console.error('Failed to process uploaded image', err)
+        setError(err instanceof Error ? err.message : 'Failed to process uploaded image')
+        setStatus('error')
+      } finally {
+        clearPoll()
+      }
+    },
+    [clearPoll, convertUploadToFile, options]
+  )
+
+  const startPolling = useCallback(
+    (createdSession: ScanSessionCreateResult) => {
+      clearPoll()
+      pollStartedAtRef.current = Date.now()
+
+      const poll = async () => {
+        if (!pollStartedAtRef.current || isPollInFlightRef.current) {
+          return
+        }
+        const elapsed = Date.now() - pollStartedAtRef.current
+        if (elapsed > MAX_POLL_DURATION_MS) {
+          clearPoll()
+          setStatus('error')
+          setError('Timed out waiting for upload. Try restarting the QR session or upload manually.')
+          return
+        }
+
+        isPollInFlightRef.current = true
+        try {
+          const upload = await ScanSessionService.fetchUploadedImage(createdSession.sessionId, createdSession.hostKey)
+          if (upload) {
+            if (isProcessingUploadRef.current) {
+              return
+            }
+            isProcessingUploadRef.current = true
+            try {
+              await processUploadedImage(upload)
+            } finally {
+              isProcessingUploadRef.current = false
+            }
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          if (!message.includes('No image uploaded')) {
+            console.warn('Polling upload failed:', err)
+          }
+        } finally {
+          isPollInFlightRef.current = false
+        }
+      }
+
+      pollRef.current = setInterval(poll, POLL_INTERVAL_MS)
+      void poll()
+    },
+    [clearPoll, processUploadedImage]
+  )
 
   const createSession = useCallback(async () => {
     setStatus('creating')
@@ -125,7 +230,7 @@ export function useHostScanSession(isOpen: boolean, options: HostScanSessionOpti
     try {
       const info = await ScanSessionService.createSession()
       setSessionInfo(info)
-      setStatus('ready')
+      setStatus('waiting_upload')
 
       const qrDataUrl = await QRCode.toDataURL(info.guestJoinUrl, {
         errorCorrectionLevel: 'M',
@@ -133,80 +238,32 @@ export function useHostScanSession(isOpen: boolean, options: HostScanSessionOpti
         scale: 6,
       })
       setQrCodeDataUrl(qrDataUrl)
-    } catch (creationError) {
-      console.error('Failed to create scan session', creationError)
-      setError(creationError instanceof Error ? creationError.message : 'Failed to create scan session')
+
+      startPolling(info)
+    } catch (err) {
+      console.error('Failed to create scan session', err)
+      setError(err instanceof Error ? err.message : 'Failed to create scan session')
       setStatus('error')
     }
-  }, [])
+  }, [startPolling])
 
   const restart = useCallback(async () => {
-    await resetState()
+    await closeSession()
     await createSession()
-  }, [resetState, createSession])
-
-  const closeSession = useCallback(async () => {
-    await completeRemoteSession()
-    await resetState()
-  }, [completeRemoteSession, resetState])
-
-  const handleFileComplete = useCallback(async () => {
-    const metadata = metadataRef.current
-    if (!metadata || !sessionInfo) {
-      return
-    }
-
-    const totalBytes = pendingChunksRef.current.reduce((sum, chunk) => sum + chunk.byteLength, 0)
-    if (totalBytes < metadata.size) {
-      return
-    }
-
-    setStatus('completed')
-    setReceivedFileName(metadata.name)
-    console.log('file uploaded by user; name of file', metadata.name)
-
-    try {
-      await ScanSessionService.notifyFileReceived(sessionInfo.sessionId, sessionInfo.hostKey, metadata.name, 'host')
-    } catch (notifyError) {
-      console.warn('Failed to notify backend about file reception', notifyError)
-    }
-
-    try {
-      dataChannelRef.current?.send(JSON.stringify({ type: 'ack', fileName: metadata.name }))
-    } catch (sendError) {
-      console.warn('Failed to send ACK to guest device', sendError)
-    }
-
-    try {
-      const mimeType = metadata.mimeType || 'image/png'
-      const blob = new Blob(pendingChunksRef.current, { type: mimeType })
-      const fileName = metadata.name || `scan-notes-${Date.now()}.png`
-      const file = new File([blob], fileName, { type: mimeType })
-
-      if (options.onImageReady) {
-        await options.onImageReady(file)
-      }
-    } catch (processingError) {
-      console.error('Error converting received image for processing:', processingError)
-      setStatus('error')
-      setError('Failed to process the received image. Try again or use manual upload.')
-    } finally {
-      pendingChunksRef.current = []
-      metadataRef.current = null
-    }
-  }, [options, sessionInfo])
+  }, [closeSession, createSession])
 
   useEffect(() => {
-    if (isOpen && !sessionInfo && status === 'idle') {
-      void createSession()
+    if (!isActive || sessionInfo) {
+      return
     }
-  }, [isOpen, sessionInfo, status, createSession])
+    void createSession()
+  }, [isActive, sessionInfo, createSession])
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isActive) {
       void closeSession()
     }
-  }, [isOpen, closeSession])
+  }, [isActive, closeSession])
 
   useEffect(() => {
     return () => {
@@ -214,185 +271,15 @@ export function useHostScanSession(isOpen: boolean, options: HostScanSessionOpti
     }
   }, [closeSession])
 
-  useEffect(() => {
-    if (!sessionInfo || !isOpen) {
-      return
-    }
-
-    const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS })
-    peerRef.current = peer
-
-    setConnectionState(peer.connectionState)
-
-    const dataChannel = peer.createDataChannel('scan-notes-files', { ordered: true })
-    dataChannel.binaryType = 'arraybuffer'
-    dataChannelRef.current = dataChannel
-
-    dataChannel.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        try {
-          const message = JSON.parse(event.data)
-          if (message.type === 'file-metadata') {
-            metadataRef.current = {
-              name: message.name,
-              size: Number(message.size) || 0,
-              mimeType: message.mimeType,
-            }
-            setStatus('receiving')
-            setTotalBytesExpected(Number(message.size) || 0)
-            pendingChunksRef.current = []
-            setBytesReceived(0)
-          } else if (message.type === 'file-complete') {
-            void handleFileComplete()
-          }
-        } catch (parseError) {
-          console.warn('Failed to parse data channel message', parseError)
-        }
-      } else if (event.data instanceof ArrayBuffer) {
-        const chunk = new Uint8Array(event.data)
-        pendingChunksRef.current.push(chunk)
-        setBytesReceived((prev) => prev + chunk.byteLength)
-      }
-    }
-
-    dataChannel.onopen = () => {
-      setStatus((prev) => (prev === 'ready' ? 'connecting' : prev))
-    }
-
-    dataChannel.onerror = (event) => {
-      console.error('Data channel error', event)
-      setError('Connection error while receiving file')
-      setStatus('error')
-    }
-
-    peer.onicecandidate = (event) => {
-      if (event.candidate) {
-        void ScanSessionService.submitCandidate(sessionInfo.sessionId, sessionInfo.hostKey, 'host', event.candidate).catch((candidateError) => {
-          console.warn('Failed to submit ICE candidate', candidateError)
-        })
-      }
-    }
-
-    peer.onconnectionstatechange = () => {
-      setConnectionState(peer.connectionState)
-      if (peer.connectionState === 'connected') {
-        setStatus((prev) => (prev === 'connecting' ? 'connected' : prev))
-      }
-      if (['disconnected', 'failed', 'closed'].includes(peer.connectionState)) {
-        void closeSession()
-      }
-    }
-
-    const prepareOffer = async () => {
-      try {
-        const offer = await peer.createOffer({ offerToReceiveAudio: false, offerToReceiveVideo: false })
-        await peer.setLocalDescription(offer)
-        await ScanSessionService.submitOffer(sessionInfo.sessionId, sessionInfo.hostKey, offer)
-        setStatus('connecting')
-      } catch (offerError) {
-        console.error('Failed to create/send offer', offerError)
-        setError('Failed to negotiate connection')
-        setStatus('error')
-      }
-    }
-
-    void prepareOffer()
-
-    answerPollRef.current = setInterval(async () => {
-      if (!peerRef.current || peerRef.current.currentRemoteDescription) {
-        if (answerPollRef.current) {
-          clearInterval(answerPollRef.current)
-          answerPollRef.current = null
-        }
-        return
-      }
-      try {
-        const answer = await ScanSessionService.fetchAnswer(sessionInfo.sessionId, sessionInfo.hostKey)
-        if (answer && answer.sdp) {
-          await peerRef.current.setRemoteDescription({ type: answer.type, sdp: answer.sdp })
-          if (answerPollRef.current) {
-            clearInterval(answerPollRef.current)
-            answerPollRef.current = null
-          }
-        } else if (Date.now() - new Date(sessionInfo.createdAt).getTime() > 15000) {
-          if (answerPollRef.current) {
-            clearInterval(answerPollRef.current)
-            answerPollRef.current = null
-          }
-          setError('Timed out waiting for device to respond. Try restarting the scan session.')
-          setStatus('error')
-        }
-      } catch (answerError) {
-        if (answerPollRef.current) {
-          clearInterval(answerPollRef.current)
-          answerPollRef.current = null
-        }
-        console.warn('Failed to fetch remote answer', answerError)
-      }
-    }, CHUNK_POLL_INTERVAL)
-
-    candidatePollRef.current = setInterval(async () => {
-      if (!peerRef.current) {
-        return
-      }
-      try {
-        const batch: CandidateBatchResult = await ScanSessionService.consumeCandidates(
-          sessionInfo.sessionId,
-          sessionInfo.hostKey,
-          'host'
-        )
-        batch.candidates.forEach((candidate) => {
-          if (!candidate) {
-            return
-          }
-          const rtcCandidate = new RTCIceCandidate(candidate as RTCIceCandidateInit)
-          void peerRef.current?.addIceCandidate(rtcCandidate).catch((candidateError) => {
-            console.warn('Failed to add ICE candidate', candidateError)
-          })
-        })
-      } catch (candidateError) {
-        console.warn('Failed to consume ICE candidates', candidateError)
-      }
-    }, CHUNK_POLL_INTERVAL)
-
-    return () => {
-      if (answerPollRef.current) {
-        clearInterval(answerPollRef.current)
-        answerPollRef.current = null
-      }
-      if (candidatePollRef.current) {
-        clearInterval(candidatePollRef.current)
-        candidatePollRef.current = null
-      }
-      dataChannelRef.current?.close()
-      peerRef.current?.close()
-      peerRef.current = null
-    }
-  }, [sessionInfo, isOpen, handleFileComplete, closeSession])
-
-  return useMemo(() => ({
+  return {
     sessionInfo,
     qrCodeDataUrl,
     status,
-    connectionState,
     error,
     receivedFileName,
-    bytesReceived,
-    totalBytesExpected,
     restart,
     closeSession,
-  }), [
-    sessionInfo,
-    qrCodeDataUrl,
-    status,
-    connectionState,
-    error,
-    receivedFileName,
-    bytesReceived,
-    totalBytesExpected,
-    restart,
-    closeSession,
-  ])
+  }
 }
 
 export default useHostScanSession

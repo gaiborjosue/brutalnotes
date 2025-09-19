@@ -1,20 +1,30 @@
 import { geminiModel } from '@/lib/firebase'
 
-async function fileToGenerativePart(file: File) {
-  const base64EncodedData = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const result = reader.result
-      if (typeof result === 'string') {
-        const [, data] = result.split(',')
-        resolve(data ?? '')
-      } else {
-        reject(new Error('Failed to read file data'))
-      }
-    }
-    reader.onerror = () => reject(new Error('Failed to read file data'))
-    reader.readAsDataURL(file)
-  })
+async function fileToGenerativePart(file: File, base64Override?: string) {
+  const base64EncodedData =
+    base64Override && base64Override.trim().length > 0
+      ? (() => {
+          const [, data] = base64Override.split(',')
+          const normalized = (data ?? base64Override).replace(/\s/g, '')
+          if (!normalized) {
+            throw new Error('Uploaded image data was empty')
+          }
+          return normalized
+        })()
+      : await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onloadend = () => {
+            const result = reader.result
+            if (typeof result === 'string') {
+              const [, data] = result.split(',')
+              resolve(data ?? '')
+            } else {
+              reject(new Error('Failed to read file data'))
+            }
+          }
+          reader.onerror = () => reject(new Error('Failed to read file data'))
+          reader.readAsDataURL(file)
+        })
 
   return {
     inlineData: {
@@ -24,13 +34,13 @@ async function fileToGenerativePart(file: File) {
   }
 }
 
-export async function transcribeImageToMarkdown(file: File): Promise<string> {
+export async function transcribeImageToMarkdown(file: File, base64Override?: string): Promise<string> {
   const fileSizeLimit = 8 * 1024 * 1024 // 8MB safety limit for local processing
   if (file.size > fileSizeLimit) {
     throw new Error('Image file is too large. Please use an image smaller than 8MB.')
   }
 
-  const imagePart = await fileToGenerativePart(file)
+  const imagePart = await fileToGenerativePart(file, base64Override)
   const prompt = `You are a meticulous assistant that digitizes handwritten or printed notes from a photo.
 
 Please transcribe the provided image into clean, well-structured Markdown that is ready to paste into a knowledge base. Follow these rules:
@@ -61,4 +71,3 @@ Please transcribe the provided image into clean, well-structured Markdown that i
 
   return text.trim()
 }
-

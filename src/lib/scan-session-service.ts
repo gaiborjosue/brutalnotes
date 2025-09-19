@@ -1,4 +1,4 @@
-// Scan session API service for WebRTC-based Scan Notes workflow
+// Scan session API service for upload-based Scan Notes workflow
 
 import ApiService from './api-service'
 
@@ -10,59 +10,35 @@ export interface ScanSessionCreateResult {
   createdAt: string
 }
 
-export interface ScanSessionStatusResult {
-  sessionId: string
-  status: string
-  hasOffer: boolean
-  hasAnswer: boolean
-  updatedAt: string
-  lastFileName?: string | null
-}
-
 export interface SessionValidationResult {
   sessionId: string
   role: 'host' | 'guest'
   status: string
-  hasOffer: boolean
-  hasAnswer: boolean
   updatedAt: string
 }
 
-export interface OfferResponseResult {
-  type: 'offer'
-  sdp: string
-  updatedAt: string
-}
-
-export interface AnswerResponseResult {
-  type: 'answer'
-  sdp: string
-  updatedAt: string
-}
-
-export interface CandidatePayload {
-  candidate: unknown
-}
-
-export interface CandidateBatchResult {
-  candidates: unknown[]
-  consumedCount: number
-}
-
-export interface FileReceivedResult {
+export interface UploadAckResult {
   sessionId: string
   fileName: string
-  receivedAt: string
+  mimeType: string
+  size: number
+  uploadedAt: string
+}
+
+export interface UploadFetchResult {
+  sessionId: string
+  fileName: string
+  mimeType: string
+  size: number
+  base64Data: string
+  uploadedAt: string
 }
 
 const BASE_PATH = '/scan-sessions'
 
 export class ScanSessionService {
   static async createSession(): Promise<ScanSessionCreateResult> {
-    const response = await ApiService.makeRequest<ScanSessionCreateResult>(
-      `${BASE_PATH}`,
-      'POST'
-    )
+    const response = await ApiService.makeRequest<ScanSessionCreateResult>(`${BASE_PATH}`, 'POST')
     if (!response.success || !response.data) {
       throw new Error(response.error || 'Failed to create scan session')
     }
@@ -97,201 +73,94 @@ export class ScanSessionService {
       session_id: string
       role: 'host' | 'guest'
       status: string
-      has_offer: boolean
-      has_answer: boolean
       updated_at: string
     }
     return {
       sessionId: payload.session_id,
       role: payload.role,
       status: payload.status,
-      hasOffer: payload.has_offer,
-      hasAnswer: payload.has_answer,
       updatedAt: payload.updated_at,
     }
   }
 
-  static async submitOffer(sessionId: string, hostKey: string, description: RTCSessionDescriptionInit): Promise<void> {
-    const response = await ApiService.makeRequest<ScanSessionStatusResult>(
-      `${BASE_PATH}/${sessionId}/offer`,
+  static async uploadImage(sessionId: string, guestKey: string, file: File): Promise<UploadAckResult> {
+    const formData = new FormData()
+    formData.append('key', guestKey)
+    formData.append('file', file)
+
+    const response = await ApiService.makeRequest<UploadAckResult>(
+      `${BASE_PATH}/${sessionId}/upload`,
       'POST',
-      { host_key: hostKey, type: description.type, sdp: description.sdp },
-      10000
+      formData,
+      120000,
+      { authenticated: false, headers: {} }
     )
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to submit SDP offer')
-    }
-  }
 
-  static async fetchOffer(sessionId: string, guestKey: string): Promise<OfferResponseResult | null> {
-    const response = await ApiService.makeRequest<OfferResponseResult>(
-      `${BASE_PATH}/${sessionId}/offer?guest_key=${encodeURIComponent(guestKey)}`,
-      'GET',
-      undefined,
-      10000,
-      { authenticated: false }
-    )
-    if (!response.success) {
-      if (response.error?.includes('404')) {
-        return null
-      }
-      throw new Error(response.error || 'Failed to fetch SDP offer')
-    }
-    if (!response.data) {
-      return null
-    }
-    const payload = response.data as unknown as {
-      type: 'offer'
-      sdp: string
-      updated_at: string
-    }
-    return {
-      type: payload.type,
-      sdp: payload.sdp,
-      updatedAt: payload.updated_at,
-    }
-  }
-
-  static async submitAnswer(sessionId: string, guestKey: string, description: RTCSessionDescriptionInit): Promise<void> {
-    const response = await ApiService.makeRequest<ScanSessionStatusResult>(
-      `${BASE_PATH}/${sessionId}/answer`,
-      'POST',
-      { guest_key: guestKey, type: description.type, sdp: description.sdp },
-      10000,
-      { authenticated: false }
-    )
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to submit SDP answer')
-    }
-  }
-
-  static async fetchAnswer(sessionId: string, hostKey: string): Promise<AnswerResponseResult | null> {
-    const response = await ApiService.makeRequest<AnswerResponseResult>(
-      `${BASE_PATH}/${sessionId}/answer?host_key=${encodeURIComponent(hostKey)}`,
-      'GET',
-      undefined,
-      10000
-    )
-    if (!response.success) {
-      if (response.error?.includes('404')) {
-        return null
-      }
-    }
-    if (!response.data) {
-      return null
-    }
-    const payload = response.data as unknown as {
-      type: 'answer'
-      sdp: string
-      updated_at: string
-    }
-    return {
-      type: payload.type,
-      sdp: payload.sdp,
-      updatedAt: payload.updated_at,
-    }
-  }
-
-  static async submitCandidate(sessionId: string, key: string, role: 'host' | 'guest', candidate: RTCIceCandidate): Promise<void> {
-    const payload = {
-      key,
-      role,
-      candidate: typeof candidate.toJSON === 'function' ? candidate.toJSON() : candidate,
-    }
-    const response = await ApiService.makeRequest<{ success: boolean }>(
-      `${BASE_PATH}/${sessionId}/candidates`,
-      'POST',
-      payload,
-      10000,
-      role === 'host' ? undefined : { authenticated: false }
-    )
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to submit ICE candidate')
-    }
-  }
-
-  static async consumeCandidates(sessionId: string, key: string, role: 'host' | 'guest'): Promise<CandidateBatchResult> {
-    const response = await ApiService.makeRequest<CandidateBatchResult>(
-      `${BASE_PATH}/${sessionId}/candidates/consume`,
-      'POST',
-      { key, role },
-      10000,
-      role === 'host' ? undefined : { authenticated: false }
-    )
     if (!response.success || !response.data) {
-      throw new Error(response.error || 'Failed to consume ICE candidates')
+      throw new Error(response.error || 'Failed to upload image')
     }
-    const payload = response.data as unknown as {
-      candidates: unknown[]
-      consumed_count: number
-    }
-    return {
-      candidates: payload.candidates,
-      consumedCount: payload.consumed_count,
-    }
-  }
 
-  static async notifyFileReceived(sessionId: string, key: string, fileName: string, role: 'host' | 'guest'): Promise<FileReceivedResult> {
-    const response = await ApiService.makeRequest<FileReceivedResult>(
-      `${BASE_PATH}/${sessionId}/file-received`,
-      'POST',
-      { key, file_name: fileName },
-      10000,
-      role === 'host' ? undefined : { authenticated: false }
-    )
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'Failed to notify file reception')
-    }
     const payload = response.data as unknown as {
       session_id: string
       file_name: string
-      received_at: string
+      mime_type: string
+      size: number
+      uploaded_at: string
     }
+
     return {
       sessionId: payload.session_id,
       fileName: payload.file_name,
-      receivedAt: payload.received_at,
+      mimeType: payload.mime_type,
+      size: payload.size,
+      uploadedAt: payload.uploaded_at,
     }
   }
 
-  static async completeSession(sessionId: string, key: string, role: 'host' | 'guest'): Promise<void> {
+  static async fetchUploadedImage(sessionId: string, hostKey: string): Promise<UploadFetchResult | null> {
+    const response = await ApiService.makeRequest<UploadFetchResult>(
+      `${BASE_PATH}/${sessionId}/upload?host_key=${encodeURIComponent(hostKey)}`,
+      'GET',
+      undefined,
+      10000
+    )
+
+    if (!response.success || !response.data) {
+      if (response.error?.includes('404')) {
+        return null
+      }
+      throw new Error(response.error || 'Failed to fetch uploaded image')
+    }
+
+    const payload = response.data as unknown as {
+      session_id: string
+      file_name: string
+      mime_type: string
+      size: number
+      base64_data: string
+      uploaded_at: string
+    }
+
+    return {
+      sessionId: payload.session_id,
+      fileName: payload.file_name,
+      mimeType: payload.mime_type,
+      size: payload.size,
+      base64Data: payload.base64_data,
+      uploadedAt: payload.uploaded_at,
+    }
+  }
+
+  static async completeSession(sessionId: string, key: string, isGuest: boolean): Promise<void> {
     const response = await ApiService.makeRequest(
       `${BASE_PATH}/${sessionId}/complete`,
       'POST',
       { key },
       10000,
-      role === 'host' ? undefined : { authenticated: false }
+      isGuest ? { authenticated: false } : undefined
     )
     if (!response.success) {
       throw new Error(response.error || 'Failed to close scan session')
-    }
-  }
-
-  static async getSessionStatus(sessionId: string, hostKey: string): Promise<ScanSessionStatusResult> {
-    const response = await ApiService.makeRequest<ScanSessionStatusResult>(
-      `${BASE_PATH}/${sessionId}/status?host_key=${encodeURIComponent(hostKey)}`,
-      'GET',
-      undefined,
-      10000
-    )
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'Failed to fetch session status')
-    }
-    const payload = response.data as unknown as {
-      session_id: string
-      status: string
-      has_offer: boolean
-      has_answer: boolean
-      updated_at: string
-      last_file_name?: string | null
-    }
-    return {
-      sessionId: payload.session_id,
-      status: payload.status,
-      hasOffer: payload.has_offer,
-      hasAnswer: payload.has_answer,
-      updatedAt: payload.updated_at,
-      lastFileName: payload.last_file_name ?? null,
     }
   }
 }

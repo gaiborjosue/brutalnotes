@@ -1,552 +1,451 @@
-// BRUTAL NOTES - Database Service Layer
-
-import { db } from './database'
-import SyncService from './sync-service'
-import NotesSyncService from './notes-sync-service'
+import { supabase } from './supabase'
 import type { Todo, Note, FileNode, DatabaseResult } from './types'
 
-// =================
-// TODO OPERATIONS
-// =================
+const SYNCED_STATUS: Todo['syncStatus'] = 'synced'
 
-class TodoService {
-  // Get all todos (excluding soft-deleted ones)
-  static async getAllTodos(): Promise<DatabaseResult<Todo[]>> {
-    try {
-      const todos = await db.todos
-        .orderBy('createdAt')
-        .reverse()
-        .filter(todo => !todo.deleted)
-        .toArray()
-      
-      console.log(`📋 Retrieved ${todos.length} todos from DB:`, 
-        todos.map(t => ({ id: t.id, text: t.text?.slice(0, 20), syncStatus: t.syncStatus, serverId: t.serverId }))
-      )
-      
-      return { success: true, data: todos }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
+export interface TodoRow extends Record<string, unknown> {
+  id: string
+  client_id: number | null
+  text: string
+  completed: boolean
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export interface NoteRow extends Record<string, unknown> {
+  id: string
+  client_id: number | null
+  title: string
+  content: string
+  path: string
+  is_folder: boolean
+  parent_id: string | null
+  parent_client_id: number | null
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+async function requireUser() {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser()
+
+  if (error) {
+    throw new Error(error.message)
   }
 
-  // Add a new todo
-  static async addTodo(text: string): Promise<DatabaseResult<Todo>> {
-    try {
-      const todoData: Omit<Todo, 'id'> = {
-        text,
-        completed: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        syncStatus: 'pending'
-      }
-      
-      const id = await db.todos.add(todoData)
-      
-      // Update the todo with clientId (using the Dexie auto-generated ID)
-      await db.todos.update(id, { clientId: id })
-      const todo = await db.todos.get(id)
-      
-      // Trigger async sync (don't wait for it to complete)
-      this.triggerSync()
-      
-      return { success: true, data: todo }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
+  if (!user) {
+    throw new Error('User is not authenticated')
   }
 
-  // Update todo
-  static async updateTodo(id: number, updates: Partial<Todo>): Promise<DatabaseResult<Todo>> {
-    try {
-      // Always mark as pending when updating locally
-      await db.todos.update(id, { ...updates, syncStatus: 'pending' })
-      const todo = await db.todos.get(id)
-      
-      // Trigger async sync
-      this.triggerSync()
-      
-      return { success: true, data: todo }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
-  }
+  return user
+}
 
-  // Toggle todo completion
-  static async toggleTodo(id: number): Promise<DatabaseResult<Todo>> {
-    try {
-      const todo = await db.todos.get(id)
-      if (!todo) {
-        return { success: false, error: 'Todo not found' }
-      }
+export function mapTodoRow(row: TodoRow): Todo {
+  const createdAt = row.created_at ? new Date(row.created_at) : new Date()
+  const updatedAt = row.updated_at ? new Date(row.updated_at) : createdAt
 
-      await db.todos.update(id, { 
-        completed: !todo.completed,
-        syncStatus: 'pending'
-      })
-      const updatedTodo = await db.todos.get(id)
-      
-      // Trigger async sync
-      this.triggerSync()
-      
-      return { success: true, data: updatedTodo }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
-  }
-
-  // Delete todo (instant UI removal with background sync)
-  static async deleteTodo(id: number): Promise<DatabaseResult<void>> {
-    try {
-      const todo = await db.todos.get(id)
-      if (!todo) {
-        return { success: false, error: 'Todo not found' }
-      }
-      
-      if (todo.serverId) {
-        // Todo exists on server - mark as deleted immediately for instant UI feedback
-        await db.todos.update(id, { 
-          deleted: true, 
-          syncStatus: 'pending',
-          updatedAt: new Date()
-        })
-        
-        // Trigger background sync to delete from server
-        // This will cleanup the local record after successful server deletion
-        this.triggerSync()
-      } else {
-        // Local-only todo - hard delete immediately
-        await db.todos.delete(id)
-      }
-      
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
-  }
-
-  // =================
-  // SYNC HELPERS
-  // =================
-
-  // Trigger background sync (debounced)
-  private static syncTimeout: NodeJS.Timeout | null = null
-  private static triggerSync(): void {
-    // Clear existing timeout to debounce rapid operations
-    if (this.syncTimeout) {
-      clearTimeout(this.syncTimeout)
-    }
-    
-    // Sync after 2 seconds of inactivity
-    this.syncTimeout = setTimeout(async () => {
-      if (navigator.onLine) {
-        try {
-          console.log('🔄 Triggering background sync...')
-          const result = await SyncService.syncTodos()
-          
-          if (result.success) {
-            console.log('✅ Background sync successful')
-          } else {
-            console.error('❌ Background sync failed:', result.errors)
-            console.error('❌ This is why your todos aren\'t reaching the backend!')
-          }
-          
-          // Always emit refresh event after sync attempt (success or failure)
-          // This ensures UI stays in sync with local database state
-          console.log('🔔 Emitting todosSynced event for UI refresh (background sync)')
-          window.dispatchEvent(new CustomEvent('todosSynced'))
-        } catch (error) {
-          console.error('💥 Background sync exception:', error)
-          console.error('💥 This might be an authentication issue!')
-        }
-      } else {
-        console.warn('📵 Device offline - skipping sync')
-      }
-    }, 2000)
-  }
-
-  // Manual sync method for user-triggered syncs
-  static async syncTodos(): Promise<DatabaseResult<void>> {
-    try {
-      const result = await SyncService.performFullSync()
-      
-      // After sync, cleanup soft-deleted todos that are no longer needed
-      await this.cleanupDeletedTodos()
-      
-      if (result.success) {
-        console.log(`✅ Manual sync successful: ${result.syncedCount} items synced`)
-        
-        // Always notify UI to refresh after sync attempt
-        console.log('🔔 Manual sync complete - emitting todosSynced event')
-        window.dispatchEvent(new CustomEvent('todosSynced'))
-        
-        return { success: true }
-      } else {
-        console.error('Manual sync failed:', result.errors)
-        
-        // Still refresh UI to show current local state
-        console.log('🔔 Manual sync failed but still emitting todosSynced for UI refresh')
-        window.dispatchEvent(new CustomEvent('todosSynced'))
-        
-        return { success: false, error: result.errors.join(', ') }
-      }
-    } catch (error) {
-      console.error('Manual sync error:', error)
-      return { success: false, error: String(error) }
-    }
-  }
-
-  // Clean up soft-deleted todos that have been synced
-  private static async cleanupDeletedTodos(): Promise<void> {
-    try {
-      // Remove todos that are deleted and synced (or don't have server IDs)
-      await db.todos
-        .where('deleted')
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .equals(1 as any) // Dexie needs IndexableType, not boolean
-        .and(todo => !todo.serverId || todo.syncStatus === 'synced')
-        .delete()
-      
-      console.log('🧹 Cleaned up synced deleted todos')
-    } catch (error) {
-      console.warn('Failed to cleanup deleted todos:', error)
-    }
+  return {
+    id: row.client_id ?? undefined,
+    clientId: row.client_id ?? undefined,
+    serverId: row.id,
+    text: row.text,
+    completed: row.completed,
+    deleted: Boolean(row.deleted_at),
+    createdAt,
+    updatedAt,
+    syncStatus: SYNCED_STATUS,
   }
 }
 
-// =================
-// NOTE OPERATIONS
-// =================
+export function mapNoteRow(row: NoteRow): Note {
+  const createdAt = row.created_at ? new Date(row.created_at) : new Date()
+  const updatedAt = row.updated_at ? new Date(row.updated_at) : createdAt
 
-class NoteService {
-  // Get all notes
-  static async getAllNotes(): Promise<DatabaseResult<Note[]>> {
+  return {
+    id: row.client_id ?? undefined,
+    clientId: row.client_id ?? undefined,
+    serverId: row.id,
+    title: row.title,
+    content: row.content,
+    path: row.path,
+    isFolder: row.is_folder,
+    parentId: row.parent_client_id ?? undefined,
+    parentClientId: row.parent_client_id ?? undefined,
+    serverParentId: row.parent_id ?? undefined,
+    deleted: Boolean(row.deleted_at),
+    createdAt,
+    updatedAt,
+    syncStatus: 'synced',
+  }
+}
+
+function generateClientId() {
+  return Math.floor(Date.now() + Math.random() * 1000)
+}
+
+export class TodoService {
+  static async getAllTodos(): Promise<DatabaseResult<Todo[]>> {
     try {
-      // Filter out deleted notes - only return active notes for UI
-      const notes = await db.notes
-        .orderBy('createdAt')
-        .filter(note => !note.deleted)
-        .toArray()
-      return { success: true, data: notes }
+      const user = await requireUser()
+
+      const { data, error } = await supabase
+        .from('todos')
+        .select('*')
+        .eq('user_id', user.id)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      const rows = (data as TodoRow[] | null) ?? []
+      const todos = rows.map(mapTodoRow)
+      return { success: true, data: todos }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, error: (error as Error).message }
     }
   }
 
-  // Get ALL notes including deleted ones (for sync purposes)
-  static async getAllNotesIncludingDeleted(): Promise<DatabaseResult<Note[]>> {
+  static async addTodo(text: string): Promise<DatabaseResult<Todo>> {
     try {
-      const notes = await db.notes.orderBy('createdAt').toArray()
-      return { success: true, data: notes }
+      const user = await requireUser()
+      const clientId = generateClientId()
+
+      const { data, error } = await supabase
+        .from('todos')
+        .insert({
+          user_id: user.id,
+          text,
+          completed: false,
+          client_id: clientId,
+        })
+        .select()
+        .single()
+
+      if (error || !data) {
+        return { success: false, error: error?.message ?? 'Failed to create todo' }
+      }
+
+      return { success: true, data: mapTodoRow(data as TodoRow) }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, error: (error as Error).message }
     }
   }
 
-  // Get note by ID
+  static async toggleTodo(id: number): Promise<DatabaseResult<Todo>> {
+    try {
+      const user = await requireUser()
+
+      const { data: existing, error: fetchError } = await supabase
+        .from('todos')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('client_id', id)
+        .single()
+
+      if (fetchError || !existing) {
+        return { success: false, error: fetchError?.message ?? 'Todo not found' }
+      }
+
+      const { data, error } = await supabase
+        .from('todos')
+        .update({
+          completed: !(existing as TodoRow).completed,
+        })
+        .eq('user_id', user.id)
+        .eq('client_id', id)
+        .select()
+        .single()
+
+      if (error || !data) {
+        return { success: false, error: error?.message ?? 'Failed to update todo' }
+      }
+
+      return { success: true, data: mapTodoRow(data as TodoRow) }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  }
+
+  static async deleteTodo(id: number): Promise<DatabaseResult<void>> {
+    try {
+      const user = await requireUser()
+
+      const timestamp = new Date().toISOString()
+
+      const { error } = await supabase
+        .from('todos')
+        .update({ deleted_at: timestamp })
+        .eq('user_id', user.id)
+        .eq('client_id', id)
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  }
+
+  static async syncTodos(): Promise<DatabaseResult<void>> {
+    // Electric handles replication now, Supabase is the source of truth.
+    return { success: true }
+  }
+}
+
+export class NoteService {
+  private static normalizePath(path: string) {
+    return path.replace(/^\/+|\/+$/g, '')
+  }
+
+  static async getAllNotes(includeDeleted = false): Promise<DatabaseResult<Note[]>> {
+    try {
+      const user = await requireUser()
+
+      let builder = supabase
+        .from('notes')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true })
+
+      if (!includeDeleted) {
+        builder = builder.is('deleted_at', null)
+      }
+
+      const { data, error } = await builder
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      const rows = (data as NoteRow[] | null) ?? []
+      const notes = rows.map(mapNoteRow)
+      return { success: true, data: notes }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  }
+
   static async getNoteById(id: number): Promise<DatabaseResult<Note>> {
     try {
-      const note = await db.notes.get(id)
-      if (!note) {
-        return { success: false, error: 'Note not found' }
+      const user = await requireUser()
+
+      const { data, error } = await supabase
+        .from('notes')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('client_id', id)
+        .single()
+
+      if (error || !data) {
+        return { success: false, error: error?.message ?? 'Note not found' }
       }
-      return { success: true, data: note }
+
+      return { success: true, data: mapNoteRow(data as NoteRow) }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, error: (error as Error).message }
     }
   }
 
-  // Create new note
   static async createNote(
-    title: string, 
-    content: string, 
-    path: string, 
-    isFolder: boolean = false,
+    title: string,
+    content: string,
+    path: string,
+    isFolder = false,
     parentId?: number
   ): Promise<DatabaseResult<Note>> {
     try {
-      const normalizedPath = NoteService.normalizePath(path)
-      const noteData: Omit<Note, 'id'> = {
+      const user = await requireUser()
+      const clientId = generateClientId()
+      const normalizedPath = this.normalizePath(path)
+
+      const insertPayload = {
+        user_id: user.id,
         title,
         content,
         path: normalizedPath,
-        isFolder,
-        parentId,
-        parentClientId: parentId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        syncStatus: 'pending'
+        is_folder: isFolder,
+        client_id: clientId,
+        parent_client_id: parentId ?? null,
       }
-      
-      const id = await db.notes.add(noteData)
-      
-      // Update the note with clientId (using the Dexie auto-generated ID)
-      await db.notes.update(id, { clientId: id })
-      const note = await db.notes.get(id)
-      
-      // Trigger async sync (don't wait for it to complete)
-      this.triggerNotesSync()
-      
-      return { success: true, data: note }
+
+      const { data, error } = await supabase
+        .from('notes')
+        .insert(insertPayload)
+        .select()
+        .single()
+
+      if (error || !data) {
+        return { success: false, error: error?.message ?? 'Failed to create note' }
+      }
+
+      return { success: true, data: mapNoteRow(data as NoteRow) }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, error: (error as Error).message }
     }
   }
 
-  // Update note content
   static async updateNote(id: number, updates: Partial<Note>): Promise<DatabaseResult<Note>> {
     try {
-      // Always mark as pending when updating locally (unless explicitly set to synced)
-      const updateData: Partial<Note> = { 
-        ...updates, 
-        updatedAt: new Date(),
-        syncStatus: updates.syncStatus || 'pending'
+      const user = await requireUser()
+
+      const payload: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
       }
 
-      if (updates.parentId !== undefined && updateData.parentClientId === undefined) {
-        updateData.parentClientId = updates.parentId ?? undefined
+      if (updates.title !== undefined) payload.title = updates.title
+      if (updates.content !== undefined) payload.content = updates.content
+      if (updates.path !== undefined) payload.path = this.normalizePath(updates.path)
+      if (updates.isFolder !== undefined) payload.is_folder = updates.isFolder
+      if (updates.parentId !== undefined) payload.parent_client_id = updates.parentId ?? null
+
+      const { data, error } = await supabase
+        .from('notes')
+        .update(payload)
+        .eq('user_id', user.id)
+        .eq('client_id', id)
+        .select()
+        .single()
+
+      if (error || !data) {
+        return { success: false, error: error?.message ?? 'Failed to update note' }
       }
 
-      if (updates.path !== undefined) {
-        updateData.path = NoteService.normalizePath(updates.path)
-      }
-      
-      await db.notes.update(id, updateData)
-      const note = await db.notes.get(id)
-      
-      // Only trigger sync if the note was marked as pending (not for manual sync status updates)
-      if (updateData.syncStatus === 'pending') {
-        this.triggerNotesSync()
-      }
-      
-      return { success: true, data: note }
+      return { success: true, data: mapNoteRow(data as NoteRow) }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, error: (error as Error).message }
     }
   }
 
-  // Delete note (instant UI removal with background sync)
   static async deleteNote(id: number): Promise<DatabaseResult<void>> {
     try {
-      const note = await db.notes.get(id)
-      if (!note) {
-        return { success: false, error: 'Note not found' }
+      const user = await requireUser()
+
+      const { data: existing, error: fetchError } = await supabase
+        .from('notes')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('client_id', id)
+        .single()
+
+      if (fetchError || !existing) {
+        return { success: false, error: fetchError?.message ?? 'Note not found' }
       }
 
-      // If it's a folder, delete all children first (recursively)
-      if (note.isFolder) {
-        const children = await db.notes.where('parentId').equals(id).toArray()
-        for (const child of children) {
-          if (child.id) {
-            await this.deleteNote(child.id) // Recursive delete
-          }
+      if ((existing as NoteRow).is_folder) {
+        const { data: children, error: childrenError } = await supabase
+          .from('notes')
+          .select('client_id')
+          .eq('user_id', user.id)
+          .eq('parent_client_id', id)
+          .is('deleted_at', null)
+
+        if (childrenError) {
+          return { success: false, error: childrenError.message }
         }
+
+        await Promise.all(
+          (children ?? [])
+            .map(child => (child as NoteRow).client_id)
+            .filter((childId): childId is number => typeof childId === 'number')
+            .map(childId => this.deleteNote(childId))
+        )
       }
-      
-      if (note.serverId) {
-        // Note exists on server - mark as deleted immediately for instant UI feedback
-        console.log(`🗑️ Marking note "${note.title}" as deleted locally, will sync to server`)
-        await db.notes.update(id, { 
-          deleted: true, 
-          syncStatus: 'pending',
-          updatedAt: new Date()
-        })
-        
-        // Trigger background sync to delete from server
-        // This will cleanup the local record after successful server deletion
-        console.log(`🔄 Triggering sync to delete note "${note.title}" on server`)
-        this.triggerNotesSync()
-      } else {
-        // Local-only note - hard delete immediately
-        await db.notes.delete(id)
+
+      // soft delete note
+      const timestamp = new Date().toISOString()
+      const { error } = await supabase
+        .from('notes')
+        .update({ deleted_at: timestamp })
+        .eq('user_id', user.id)
+        .eq('client_id', id)
+
+      if (error) {
+        return { success: false, error: error.message }
       }
-      
+
       return { success: true }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, error: (error as Error).message }
     }
   }
 
-  // Build file tree structure for FileSystemPanel
   static async buildFileTree(): Promise<DatabaseResult<FileNode[]>> {
     try {
-      // Order by: folders first, then temp folder first, then by creation date
-      // Only get non-deleted notes for the UI
-      const notes = await db.notes
-        .orderBy('createdAt')
-        .filter(note => !note.deleted)
-        .toArray()
-      // Sort to put temp folder first, then other folders, then files
-      notes.sort((a, b) => {
-        // Temp folder always first
-        if (a.isFolder && a.title === 'temp') return -1
-        if (b.isFolder && b.title === 'temp') return 1
-        // Then other folders
-        if (a.isFolder && !b.isFolder) return -1
-        if (!a.isFolder && b.isFolder) return 1
-        // Then by creation date
-        return a.createdAt.getTime() - b.createdAt.getTime()
-      })
-      
-      // Build the tree structure
-      const nodeMap = new Map<number, FileNode>()
-      const rootNodes: FileNode[] = []
-
-      // First pass: create all nodes
-      notes.forEach(note => {
-        if (note.id) {
-          // Clean display name - remove .lexical extension for files
-          const displayName = note.isFolder 
-            ? note.title 
-            : note.title.endsWith('.lexical') 
-              ? note.title.slice(0, -8) // Remove '.lexical'
-              : note.title
-
-          const node: FileNode = {
-            id: note.id.toString(),
-            name: displayName,
-            type: note.isFolder ? 'folder' : 'file',
-            noteId: note.id,
-            children: note.isFolder ? [] : undefined,
-            expanded: true // Expand by default
-          }
-          nodeMap.set(note.id, node)
-        }
-      })
-
-      // Second pass: build parent-child relationships
-      notes.forEach(note => {
-        if (note.id) {
-          const node = nodeMap.get(note.id)
-          if (node) {
-            if (note.parentId && nodeMap.has(note.parentId)) {
-              const parent = nodeMap.get(note.parentId)
-              if (parent?.children) {
-                parent.children.push(node)
-              }
-            } else {
-              // Root level node
-              rootNodes.push(node)
-            }
-          }
-        }
-      })
-
-      return { success: true, data: rootNodes }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
-  }
-
-  // =================
-  // NOTES SYNC HELPERS
-  // =================
-
-  // Trigger background notes sync (debounced)
-  private static notesSyncTimeout: NodeJS.Timeout | null = null
-  private static triggerNotesSync(autoSaveMode: boolean = false): void {
-    // Clear existing timeout to debounce rapid operations
-    if (this.notesSyncTimeout) {
-      clearTimeout(this.notesSyncTimeout)
-    }
-    
-    // Use different delays for different scenarios
-    const delay = autoSaveMode 
-      ? 3000 // 3 seconds for auto-save (batch multiple edits)
-      : 2000 // 2 seconds for manual operations
-    
-    // Sync after specified delay of inactivity
-    this.notesSyncTimeout = setTimeout(async () => {
-      if (navigator.onLine) {
-        try {
-          console.log('🔄 Triggering background notes sync...')
-          await NotesSyncService.syncNotes()
-          
-          // Emit a custom event to notify UI components to refresh
-          console.log('🔔 Emitting notesSynced event for UI refresh')
-          window.dispatchEvent(new CustomEvent('notesSynced'))
-        } catch (error) {
-          console.error('Background notes sync failed:', error)
-        }
+      const notesResult = await this.getAllNotes()
+      if (!notesResult.success || !notesResult.data) {
+        return { success: false, error: notesResult.error ?? 'Failed to fetch notes' }
       }
-    }, delay)
-  }
 
-  // Manual sync method for user-triggered syncs
-  static async syncNotes(): Promise<DatabaseResult<void>> {
-    try {
-      const result = await NotesSyncService.performFullSync()
-      
-      if (result.success) {
-        console.log(`✅ Manual notes sync successful: ${result.syncedCount} items synced`)
-        
-        // Notify UI to refresh
-        console.log('🔔 Manual notes sync complete - emitting notesSynced event')
-        window.dispatchEvent(new CustomEvent('notesSynced'))
-        
-        return { success: true }
-      } else {
-        console.error('Manual notes sync failed:', result.errors)
-        return { success: false, error: result.errors.join(', ') }
-      }
+      return { success: true, data: buildFileTreeFromNotes(notesResult.data) }
     } catch (error) {
-      console.error('Manual notes sync error:', error)
-      return { success: false, error: String(error) }
-    }
-  }
-
-  private static normalizePath(path: string): string {
-    if (!path) {
-      return ''
-    }
-    return path.replace(/^\/+|\/+$/g, '')
-  }
-}
-
-// =================
-// UTILITY FUNCTIONS
-// =================
-
-class DatabaseUtils {
-  // Get sync status for all pending items
-  static async getPendingSyncItems(): Promise<DatabaseResult<{ todos: Todo[], notes: Note[] }>> {
-    try {
-      const pendingTodos = await db.todos.where('syncStatus').equals('pending').toArray()
-      const pendingNotes = await db.notes.where('syncStatus').equals('pending').toArray()
-      
-      return { 
-        success: true, 
-        data: { todos: pendingTodos, notes: pendingNotes } 
-      }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
-  }
-
-  // Mark items as synced (for future sync functionality)
-  static async markAsSynced(type: 'todo' | 'note', ids: number[]): Promise<DatabaseResult<void>> {
-    try {
-      if (type === 'todo') {
-        await db.todos.where('id').anyOf(ids).modify({ syncStatus: 'synced' })
-      } else {
-        await db.notes.where('id').anyOf(ids).modify({ syncStatus: 'synced' })
-      }
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
-  }
-
-  // Clear all data (for testing/reset)
-  static async clearAllData(): Promise<DatabaseResult<void>> {
-    try {
-      await db.todos.clear()
-      await db.notes.clear()
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, error: (error as Error).message }
     }
   }
 }
 
-// Export all services
-export { TodoService, NoteService, DatabaseUtils }
+export default {
+  TodoService,
+  NoteService,
+}
+
+export function buildFileTreeFromNotes(notes: Note[]): FileNode[] {
+  const sortedNotes = [...notes]
+  sortedNotes.sort((a, b) => {
+    if (a.isFolder && a.title === 'temp') return -1
+    if (b.isFolder && b.title === 'temp') return 1
+    if (a.isFolder && !b.isFolder) return -1
+    if (!a.isFolder && b.isFolder) return 1
+    return a.createdAt.getTime() - b.createdAt.getTime()
+  })
+
+  const nodeMap = new Map<number, FileNode>()
+  const rootNodes: FileNode[] = []
+
+  sortedNotes.forEach(note => {
+    if (!note.clientId) {
+      return
+    }
+
+    const node: FileNode = {
+      id: note.clientId.toString(),
+      name: note.isFolder && note.title === 'temp' ? note.title : note.title.replace(/\.lexical$/, ''),
+      type: note.isFolder ? 'folder' : 'file',
+      noteId: note.clientId,
+      children: note.isFolder ? [] : undefined,
+      expanded: note.title === 'temp',
+    }
+
+    nodeMap.set(note.clientId, node)
+  })
+
+  sortedNotes.forEach(note => {
+    if (!note.clientId) {
+      return
+    }
+
+    const node = nodeMap.get(note.clientId)
+    if (!node) {
+      return
+    }
+
+    if (note.parentClientId && nodeMap.has(note.parentClientId)) {
+      const parentNode = nodeMap.get(note.parentClientId)!
+      if (!parentNode.children) {
+        parentNode.children = []
+      }
+      parentNode.children.push(node)
+    } else {
+      rootNodes.push(node)
+    }
+  })
+
+  return rootNodes
+}

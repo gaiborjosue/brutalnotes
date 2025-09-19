@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { AlertTriangle, Camera, CheckCircle2, ChevronDown, Loader2, RefreshCcw, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Camera, CheckCircle2, ChevronDown, Loader2, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -9,12 +9,10 @@ import { transcribeImageToMarkdown } from './image-transcriber'
 
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Ready to start',
-  creating: 'Creating session…',
-  ready: 'Waiting for device',
-  connecting: 'Negotiating connection…',
-  connected: 'Connected',
-  receiving: 'Receiving photo…',
-  completed: 'Photo received!',
+  creating: 'Generating QR…',
+  waiting_upload: 'Waiting for upload…',
+  processing: 'Processing upload…',
+  completed: 'Image received',
   error: 'Session error',
 }
 
@@ -24,31 +22,46 @@ interface ScanNotesPopoverProps {
 }
 
 type ProcessingStatus = 'idle' | 'processing' | 'success' | 'error'
-
-type ProcessingSource = 'p2p' | 'manual'
+type ProcessingSource = 'qr' | 'manual'
 
 export function ScanNotesPopover({ buttonClassName, onCreateNote }: ScanNotesPopoverProps) {
   const [open, setOpen] = useState(false)
+  const [isQrExpanded, setIsQrExpanded] = useState(false)
   const manualUploadInputRef = useRef<HTMLInputElement | null>(null)
+
   const [manualFileName, setManualFileName] = useState<string | null>(null)
   const [manualUploadError, setManualUploadError] = useState<string | null>(null)
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>('idle')
   const [processingMessage, setProcessingMessage] = useState<string | null>(null)
   const [processingError, setProcessingError] = useState<string | null>(null)
   const [processingSource, setProcessingSource] = useState<ProcessingSource | null>(null)
-  const [isQrExpanded, setIsQrExpanded] = useState(false)
 
   const closeSessionRef = useRef<() => Promise<void>>(async () => {})
 
-  const processImageFile = useCallback(
-    async (file: File, source: ProcessingSource) => {
+  const handleImageTranscription = useCallback(
+    async (file: File, source: ProcessingSource, base64Override?: string) => {
       setProcessingSource(source)
       setProcessingStatus('processing')
       setProcessingMessage('Transcribing notes with Firebase AI…')
       setProcessingError(null)
 
       try {
-        const markdown = await transcribeImageToMarkdown(file)
+        let markdown: string | null = null
+        try {
+          markdown = await transcribeImageToMarkdown(file, base64Override)
+        } catch (primaryError) {
+          const shouldRetryWithoutOverride = source === 'qr' && Boolean(base64Override)
+          if (!shouldRetryWithoutOverride) {
+            throw primaryError
+          }
+          console.warn('QR transcription failed with provided base64. Retrying with file-based fallback.', primaryError)
+          markdown = await transcribeImageToMarkdown(file)
+        }
+
+        if (!markdown) {
+          throw new Error('The AI did not return any content for this image.')
+        }
+
         const trimmed = markdown.trim()
         if (!trimmed) {
           throw new Error('The AI did not return any content for this image.')
@@ -75,7 +88,7 @@ export function ScanNotesPopover({ buttonClassName, onCreateNote }: ScanNotesPop
         setProcessingMessage(null)
         setProcessingError(err instanceof Error ? err.message : 'Unable to transcribe the image. Please try again.')
       } finally {
-        if (source === 'p2p') {
+        if (source === 'qr') {
           void closeSessionRef.current()
         }
       }
@@ -83,40 +96,30 @@ export function ScanNotesPopover({ buttonClassName, onCreateNote }: ScanNotesPop
     [onCreateNote]
   )
 
-  const hostSessionOptions = useMemo(() => ({
-    onImageReady: async (file: File) => {
-      await processImageFile(file, 'p2p')
-    },
-  }), [processImageFile])
+  const hostSessionOptions = useMemo(
+    () => ({
+      onImageReady: async (file: File, context) => {
+        await handleImageTranscription(file, 'qr', context?.base64Data)
+      },
+    }),
+    [handleImageTranscription]
+  )
 
-  const {
-    sessionInfo,
-    qrCodeDataUrl,
-    status,
-    connectionState,
-    error,
-    receivedFileName,
-    bytesReceived,
-    totalBytesExpected,
-    restart,
-    closeSession,
-  } = useHostScanSession(open && isQrExpanded, hostSessionOptions)
+  const { sessionInfo, qrCodeDataUrl, status, error, receivedFileName, restart, closeSession } = useHostScanSession(
+    open && isQrExpanded,
+    hostSessionOptions
+  )
 
   closeSessionRef.current = closeSession
 
   const statusLabel = STATUS_LABELS[status] ?? status
-  const progressPercent = totalBytesExpected > 0 ? Math.min(100, Math.floor((bytesReceived / totalBytesExpected) * 100)) : 0
-  const connectionLabel = connectionState === 'closed' ? 'not connected' : connectionState.replace(/_/g, ' ')
 
   useEffect(() => {
     if (!open) {
       setIsQrExpanded(false)
+      resetProcessingState()
       setManualFileName(null)
       setManualUploadError(null)
-      setProcessingStatus('idle')
-      setProcessingMessage(null)
-      setProcessingError(null)
-      setProcessingSource(null)
       if (manualUploadInputRef.current) {
         manualUploadInputRef.current.value = ''
       }
@@ -127,12 +130,16 @@ export function ScanNotesPopover({ buttonClassName, onCreateNote }: ScanNotesPop
     if (!isQrExpanded) {
       void closeSessionRef.current()
     } else {
-      setProcessingStatus('idle')
-      setProcessingMessage(null)
-      setProcessingError(null)
-      setProcessingSource(null)
+      resetProcessingState()
     }
   }, [isQrExpanded])
+
+  function resetProcessingState() {
+    setProcessingStatus('idle')
+    setProcessingMessage(null)
+    setProcessingError(null)
+    setProcessingSource(null)
+  }
 
   const handleManualFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (processingStatus === 'processing') {
@@ -153,7 +160,7 @@ export function ScanNotesPopover({ buttonClassName, onCreateNote }: ScanNotesPop
     setManualUploadError(null)
     setManualFileName(file.name)
     console.log('manual upload file; name of file', file.name)
-    void processImageFile(file, 'manual')
+    void handleImageTranscription(file, 'manual')
   }
 
   return (
@@ -216,7 +223,7 @@ export function ScanNotesPopover({ buttonClassName, onCreateNote }: ScanNotesPop
               variant="neutral"
               className="w-full justify-between border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-neutral-100"
               onClick={() => setIsQrExpanded((prev) => !prev)}
-              disabled={processingStatus === 'processing' && processingSource === 'p2p'}
+              disabled={processingStatus === 'processing' && processingSource === 'qr'}
             >
               <span>Scan with phone (QR)</span>
               <ChevronDown className={cn('h-4 w-4 transition-transform', isQrExpanded && 'rotate-180')} />
@@ -224,18 +231,22 @@ export function ScanNotesPopover({ buttonClassName, onCreateNote }: ScanNotesPop
 
             {isQrExpanded ? (
               <div className="space-y-3 text-xs text-neutral-600">
+                <div className="border border-black bg-neutral-100 px-2 py-1 text-center font-semibold">
+                  {statusLabel}
+                </div>
+
                 {error ? (
                   <div className="bg-red-100 border-2 border-black px-3 py-2 text-sm text-red-700">
-                    <p className="font-bold">Connection error</p>
+                    <p className="font-bold">Session error</p>
                     <p className="mt-1">{error}</p>
                   </div>
                 ) : null}
 
                 {sessionInfo && qrCodeDataUrl ? (
                   <div className="border-2 border-black bg-white p-3 flex flex-col items-center gap-2">
-                    <img src={qrCodeDataUrl} alt="Scan to connect" className="w-40 h-40" />
+                    <img src={qrCodeDataUrl} alt="Scan to upload" className="w-40 h-40" />
                     <p className="text-xs text-neutral-600 text-center">
-                      Scan this QR code with your phone to send a photo of your notes.
+                      Scan this QR code with your phone to upload a photo of your notes.
                     </p>
                     <div className="w-full text-[10px] text-neutral-500 break-all text-center bg-neutral-100 border border-dashed border-neutral-400 px-2 py-1">
                       {sessionInfo.guestJoinUrl}
@@ -247,35 +258,40 @@ export function ScanNotesPopover({ buttonClassName, onCreateNote }: ScanNotesPop
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">Connection</span>
-                    <span>{connectionLabel}</span>
+                {receivedFileName ? (
+                  <div className="border border-black bg-green-100 px-2 py-1 text-green-700 font-semibold">
+                    Uploaded: {receivedFileName}
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">Status</span>
-                    <span>{statusLabel}</span>
-                  </div>
-                  {status === 'receiving' || status === 'completed' ? (
-                    <div className="flex flex-col gap-1">
-                      <span className="font-semibold">Transfer</span>
-                      <div className="h-2 w-full bg-neutral-200 border border-black">
-                        <div className="h-full bg-green-500" style={{ width: `${progressPercent}%` }} />
-                      </div>
-                      <span>
-                        {bytesReceived.toLocaleString()} / {totalBytesExpected.toLocaleString()} bytes ({progressPercent}%)
-                      </span>
-                    </div>
-                  ) : null}
-                  {receivedFileName ? (
-                    <div className="border border-black bg-green-100 px-2 py-1 text-green-700 font-semibold">
-                      Received: {receivedFileName}
-                    </div>
-                  ) : null}
+                ) : null}
+
+                <div className="flex items-center justify-between gap-2">
+                  <Button
+                    variant="neutral"
+                    className="flex-1 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-neutral-100"
+                    onClick={() => {
+                      void restart()
+                      resetProcessingState()
+                    }}
+                    disabled={status === 'creating' || (processingStatus === 'processing' && processingSource === 'qr')}
+                  >
+                    <RefreshCcw className="h-4 w-4 mr-2" />
+                    Restart
+                  </Button>
+                  <Button
+                    variant="neutral"
+                    className="flex-1 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-neutral-100"
+                    onClick={() => {
+                      setIsQrExpanded(false)
+                      void closeSession()
+                    }}
+                    disabled={processingStatus === 'processing' && processingSource === 'qr'}
+                  >
+                    Close
+                  </Button>
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-neutral-500 text-center">Open to connect your phone and capture notes instantly.</p>
+              <p className="text-xs text-neutral-500 text-center">Open to generate a QR code for quick phone uploads.</p>
             )}
           </div>
 
@@ -300,45 +316,11 @@ export function ScanNotesPopover({ buttonClassName, onCreateNote }: ScanNotesPop
               </div>
               {processingSource ? (
                 <span className="text-[10px] text-neutral-500">
-                  Source: {processingSource === 'p2p' ? 'Scan & send' : 'Manual upload'}
+                  Source: {processingSource === 'qr' ? 'QR upload' : 'Manual upload'}
                 </span>
               ) : null}
             </div>
           )}
-
-          <div className="flex items-center justify-between gap-2">
-            {isQrExpanded ? (
-              <Button
-                variant="neutral"
-                className="flex-1 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-neutral-100"
-                onClick={() => {
-                  void restart()
-                  setProcessingStatus('idle')
-                  setProcessingMessage(null)
-                  setProcessingError(null)
-                  setProcessingSource(null)
-                }}
-                disabled={status === 'creating' || processingStatus === 'processing'}
-              >
-                <RefreshCcw className="h-4 w-4 mr-2" />
-                Restart
-              </Button>
-            ) : null}
-            <Button
-              variant="neutral"
-              className={cn(
-                'border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-neutral-100',
-                isQrExpanded ? 'flex-1' : 'w-full'
-              )}
-              onClick={() => {
-                setOpen(false)
-                void closeSession()
-              }}
-              disabled={processingStatus === 'processing' && processingSource === 'p2p'}
-            >
-              Close
-            </Button>
-          </div>
         </div>
       </PopoverContent>
     </Popover>
@@ -346,4 +328,3 @@ export function ScanNotesPopover({ buttonClassName, onCreateNote }: ScanNotesPop
 }
 
 export default ScanNotesPopover
-

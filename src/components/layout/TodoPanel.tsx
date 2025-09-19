@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -7,127 +7,39 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Plus, Trash2 } from "lucide-react"
 import Star10 from "@/components/stars/s10"
 import { TodoService } from "@/lib/database-service"
-import type { Todo } from "@/lib/types"
+import { useTodosShape } from "@/lib/electric/shapes"
 
 export function TodoPanel() {
-  const [todos, setTodos] = useState<Todo[]>([])
   const [newTodo, setNewTodo] = useState("")
-  const [loading, setLoading] = useState(true)
-  const [isOnline, setIsOnline] = useState(navigator.onLine)
-  const [syncing, setSyncing] = useState(false)
-  const [networkError, setNetworkError] = useState<string | null>(null)
+  const { todos, shape, isInitialLoading, isSyncing, isLiveSync } = useTodosShape()
 
-  // Load todos from database on component mount
-  useEffect(() => {
-    const loadTodos = async () => {
-      const result = await TodoService.getAllTodos()
-      if (result.success && result.data) {
-        setTodos(result.data)
-      } else {
-        console.error('Failed to load todos:', result.error)
-      }
-      setLoading(false)
-    }
-    
-    loadTodos()
-  }, [])
-
-  // Listen for online/offline status and sync events
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true)
-    const handleOffline = () => setIsOnline(false)
-    
-    // Listen for sync completion to refresh UI
-    const handleSyncCompleted = async () => {
-      console.log('🔄 TodoPanel received todosSynced event - refreshing todos from database...')
-      const result = await TodoService.getAllTodos()
-      if (result.success && result.data) {
-        const todosWithStatus = result.data.map(t => ({
-          id: t.id, 
-          text: t.text?.slice(0, 20), 
-          syncStatus: t.syncStatus, 
-          serverId: t.serverId?.slice(0, 8)
-        }))
-        console.log(`📋 TodoPanel: Refreshed ${result.data.length} todos:`, todosWithStatus)
-        setTodos(result.data)
-        console.log('✅ TodoPanel: UI state updated with fresh todos')
-      } else {
-        console.error('❌ TodoPanel: Failed to refresh todos after sync:', result.error)
-      }
-    }
-    
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    window.addEventListener('todosSynced', handleSyncCompleted)
-    
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-      window.removeEventListener('todosSynced', handleSyncCompleted)
-    }
-  }, [])
-
-  // Manual sync function
-  const handleManualSync = async () => {
-    if (!isOnline) return
-    
-    setSyncing(true)
-    setNetworkError(null)
-    
-    try {
-      console.log('🔄 Manual sync started...')
-      const result = await TodoService.syncTodos()
-      if (result.success) {
-        console.log('✅ Manual sync successful, refreshing UI...')
-        // Force refresh todos after manual sync
-        const todosResult = await TodoService.getAllTodos()
-        if (todosResult.success && todosResult.data) {
-          console.log(`📋 Manual sync: refreshed ${todosResult.data.length} todos`)
-          setTodos(todosResult.data)
-        }
-      } else {
-        console.error('❌ Manual sync failed:', result.error)
-        setNetworkError(result.error || 'Sync failed')
-        // Clear error after 5 seconds
-        setTimeout(() => setNetworkError(null), 5000)
-      }
-    } catch (error) {
-      console.error('Manual sync failed:', error)
-      setNetworkError('Network error occurred')
-      setTimeout(() => setNetworkError(null), 5000)
-    } finally {
-      setSyncing(false)
-    }
-  }
+  const loading = shape.isLoading
+  const syncError = shape.isError ? String(shape.error) : null
 
   const addTodo = async () => {
-    if (newTodo.trim()) {
-      const result = await TodoService.addTodo(newTodo.trim())
-      if (result.success && result.data) {
-        setTodos([result.data, ...todos])
-        setNewTodo("")
-      } else {
-        console.error('Failed to add todo:', result.error)
-      }
+    if (!newTodo.trim()) {
+      return
     }
+
+    const result = await TodoService.addTodo(newTodo.trim())
+    if (!result.success) {
+      console.error('Failed to add todo:', result.error)
+      return
+    }
+
+    setNewTodo("")
   }
 
   const toggleTodo = async (id: number) => {
     const result = await TodoService.toggleTodo(id)
-    if (result.success && result.data) {
-      setTodos(todos.map(todo => 
-        todo.id === id ? result.data! : todo
-      ))
-    } else {
+    if (!result.success) {
       console.error('Failed to toggle todo:', result.error)
     }
   }
 
   const deleteTodo = async (id: number) => {
     const result = await TodoService.deleteTodo(id)
-    if (result.success) {
-      setTodos(todos.filter(todo => todo.id !== id))
-    } else {
+    if (!result.success) {
       console.error('Failed to delete todo:', result.error)
     }
   }
@@ -139,30 +51,49 @@ export function TodoPanel() {
           <div className="flex items-center gap-2">
             <Star10 size={20} color="#000" />
             TODOS
+            {/* Show sync status with subtle dots */}
+            {isInitialLoading && (
+              <span className="text-xs font-mono text-gray-600 bg-yellow-200 px-2 py-1 rounded">
+                LOADING...
+              </span>
+            )}
+            {isSyncing && !isInitialLoading && (
+              <div 
+                className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" 
+                title="Syncing..."
+              />
+            )}
+            {isLiveSync && (
+              <div 
+                className="w-2 h-2 bg-green-500 rounded-full" 
+                title="Live sync active"
+              />
+            )}
           </div>
-
         </CardTitle>
       </CardHeader>
       <CardContent className="p-3 pt-0 flex-1 min-h-0">
         <div className="space-y-3 h-full min-h-0 flex flex-col">
-          {/* Network error display */}
-          {networkError && (
+          {syncError && (
             <div className="bg-red-100 border-2 border-red-500 text-red-700 px-2 py-1 text-xs font-mono rounded">
-              ⚠️ {networkError}
+              ⚠️ {syncError}
             </div>
           )}
-          
-          {/* Add new todo */}
+
           <div className="flex gap-2">
             <Input
               value={newTodo}
               onChange={(e) => setNewTodo(e.target.value)}
               placeholder="Add brutal todo..."
               className="flex-1 border-2 border-black font-mono text-sm"
-              onKeyPress={(e) => e.key === 'Enter' && addTodo()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  void addTodo()
+                }
+              }}
             />
             <Button
-              onClick={addTodo}
+              onClick={() => void addTodo()}
               size="sm"
               className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-green-400 hover:bg-green-500 text-black font-black"
             >
@@ -170,7 +101,6 @@ export function TodoPanel() {
             </Button>
           </div>
 
-          {/* Todo list */}
           <ScrollArea className="flex-1 min-h-0">
             <div className="space-y-2">
               {loading ? (
@@ -182,35 +112,39 @@ export function TodoPanel() {
               ) : (
                 todos.map((todo) => (
                   <div
-                    key={todo.id}
+                    key={todo.id ?? todo.serverId}
                     className="flex items-center gap-2 p-2 border-2 border-black hover:bg-gray-50 bg-white"
                   >
                     <Checkbox
                       checked={todo.completed}
                       onCheckedChange={() => {
-                        if (todo.id) toggleTodo(todo.id)
+                        if (todo.id) {
+                          void toggleTodo(todo.id)
+                        }
                       }}
                       className="border-2 border-black"
                     />
                     <span
                       className={`flex-1 text-sm font-mono ${
-                        todo.completed
-                          ? "line-through text-gray-500"
-                          : "text-black"
+                        todo.completed ? "line-through text-gray-500" : "text-black"
                       }`}
                     >
                       {todo.text}
                     </span>
-                    
-                    {/* Sync status indicator - only show red dot for actual errors */}
+
                     <div className="flex items-center gap-1">
                       {todo.syncStatus === 'error' && (
-                        <div className="w-2 h-2 bg-red-500 rounded-full" title="Sync failed - will retry automatically" />
+                        <div
+                          className="w-2 h-2 bg-red-500 rounded-full"
+                          title="Sync failed - will retry automatically"
+                        />
                       )}
-                      
+
                       <Button
                         onClick={() => {
-                          if (todo.id) deleteTodo(todo.id)
+                          if (todo.id) {
+                            void deleteTodo(todo.id)
+                          }
                         }}
                         size="sm"
                         className="h-6 w-6 p-0 hover:bg-red-400"

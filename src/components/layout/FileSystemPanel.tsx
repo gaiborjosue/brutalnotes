@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { useState, useEffect, forwardRef, useImperativeHandle } from "react"
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,8 +17,8 @@ import {
 } from "lucide-react"
 import Star27 from "@/components/stars/s27"
 import { NoteService } from "@/lib/database-service"
-import { NotesSyncService } from "@/lib/notes-sync-service"
 import type { FileNode } from "@/lib/types"
+import { useNotesShape } from "@/lib/electric/shapes"
 import nickGenerator from "nick-generator"
 
 
@@ -37,58 +36,38 @@ interface FileSystemPanelProps {
 }
 
 export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick, onFileDeleted, onFolderCleared, currentFileId, beforeFileMove }, ref) => {
+  const { notes, fileTree: shapeFileTree, shape, isInitialLoading, isSyncing, isLiveSync } = useNotesShape()
   const [fileTree, setFileTree] = useState<FileNode[]>([])
-  const [loading, setLoading] = useState(true)
   const [editingFile, setEditingFile] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
 
+  const mergeTreeState = useCallback((previous: FileNode[], next: FileNode[]): FileNode[] => {
+    const previousExpanded = new Map(previous.map(node => [node.id, node]))
 
-  // Load file tree from database
-  useEffect(() => {
-    const loadFileTree = async () => {
-      // Load the file tree (database initialization already handles default folders)
-      const result = await NoteService.buildFileTree()
-      if (result.success && result.data) {
-        setFileTree(result.data)
-      } else {
-        console.error('Failed to load file tree:', result.error)
-      }
-      setLoading(false)
-    }
-
-    loadFileTree()
-  }, [])
-
-  useEffect(() => {
-    const handleNotesSynced = (_event: Event) => {
-      refreshFileTree().catch(error => {
-        console.error('Failed to refresh file tree after notes sync:', error)
+    const apply = (nodes: FileNode[]): FileNode[] =>
+      nodes.map(node => {
+        const prev = previousExpanded.get(node.id)
+        return {
+          ...node,
+          expanded: prev?.expanded ?? node.expanded,
+          children: node.children ? apply(node.children) : undefined,
+        }
       })
 
-      setTimeout(() => {
-        refreshFileTree().catch(error => {
-          console.error('Failed to refresh file tree after delayed notes sync refresh:', error)
-        })
-      }, 100)
-    }
-
-    window.addEventListener('notesSynced', handleNotesSynced as EventListener)
-
-    return () => {
-      window.removeEventListener('notesSynced', handleNotesSynced as EventListener)
-    }
+    return apply(next)
   }, [])
 
+  useEffect(() => {
+    setFileTree(prev => mergeTreeState(prev, shapeFileTree))
+  }, [shapeFileTree, mergeTreeState])
 
-  // Refresh file tree from database
-  const refreshFileTree = async () => {
-    const result = await NoteService.buildFileTree()
-    if (result.success && result.data) {
-      setFileTree(result.data)
-    }
-  }
+  const refreshFileTree = useCallback(async () => {
+    setFileTree(prev => mergeTreeState(prev, shapeFileTree))
+  }, [mergeTreeState, shapeFileTree])
+
+  const loading = shape.isLoading
 
   // Expose refreshFileTree to parent component
   useImperativeHandle(ref, () => ({
@@ -127,15 +106,8 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     try {
       const folderNoteId = parseInt(folderId)
       
-      // Get all notes
-      const allNotesResult = await NoteService.getAllNotes()
-      if (!allNotesResult.success || !allNotesResult.data) {
-        console.error('Failed to get notes:', allNotesResult.error)
-        return
-      }
-
       // Find all notes that are children of this folder (not folders themselves)
-      const notesToDelete = allNotesResult.data.filter(note => 
+      const notesToDelete = notes.filter(note => 
         note.parentId === folderNoteId && !note.isFolder
       )
 
@@ -391,12 +363,6 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
             // Refresh the file tree immediately so the user sees the new location
             await refreshFileTree()
 
-            try {
-              await NotesSyncService.performFullSync()
-            } catch (syncError) {
-              console.warn('Notes sync after move failed:', syncError)
-            }
-
             console.log('✅ File moved successfully!')
           } else {
             console.error('❌ Failed to move file:', result.error)
@@ -558,6 +524,24 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
           <span className="flex items-center gap-2">
             <Star27 size={20} color="#000" />
             FILES
+            {/* Show sync status with subtle dots */}
+            {isInitialLoading && (
+              <span className="text-xs font-mono text-gray-600 bg-yellow-200 px-2 py-1 rounded">
+                LOADING...
+              </span>
+            )}
+            {isSyncing && !isInitialLoading && (
+              <div 
+                className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" 
+                title="Syncing..."
+              />
+            )}
+            {isLiveSync && (
+              <div 
+                className="w-2 h-2 bg-green-500 rounded-full" 
+                title="Live sync active"
+              />
+            )}
           </span>
           <div className="flex items-center gap-2">
             <Button

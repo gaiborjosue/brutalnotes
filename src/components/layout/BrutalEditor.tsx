@@ -38,6 +38,7 @@ import { CollapsibleContainerNode } from "@/components/editor/nodes/collapsible-
 import { CollapsibleContentNode } from "@/components/editor/nodes/collapsible-content-node" 
 import { CollapsibleTitleNode } from "@/components/editor/nodes/collapsible-title-node"
 import { ExcalidrawNode } from "@/components/editor/nodes/excalidraw-node"
+import { EquationNode } from "@/components/editor/nodes/equation-node"
 import { ImageNode } from "@/components/editor/nodes/image-node"
 import { PageBreakNode } from "@/components/editor/nodes/page-break-node"
 import { CollapsiblePlugin } from "@/components/editor/plugins/collapsible-plugin"
@@ -47,6 +48,7 @@ import { PageBreakPlugin } from "@/components/editor/plugins/page-break-plugin"
 import { TableActionMenuPlugin } from "@/components/editor/plugins/table-action-menu-plugin"
 import { TableCellResizerPlugin } from "@/components/editor/plugins/table-cell-resizer-plugin"
 import { TableHoverActionsPlugin } from "@/components/editor/plugins/table-hover-actions-plugin"
+import { EquationsPlugin } from "@/components/editor/plugins/equations-plugin"
 import { ContentEditable } from "@/components/editor/editor-ui/content-editable"
 import { ToolbarPlugin } from "@/components/editor/plugins/toolbar/toolbar-plugin"
 import { HistoryToolbarPlugin } from "@/components/editor/plugins/toolbar/history-toolbar-plugin"
@@ -126,6 +128,7 @@ const editorConfig: InitialConfigType = {
     CollapsibleContentNode,
     CollapsibleTitleNode,
     ExcalidrawNode,
+    EquationNode,
     ImageNode,
     PageBreakNode,
     TableNode,
@@ -514,7 +517,10 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
         
         {/* Images Plugin */}
         <ImagesPlugin />
-        
+
+        {/* Equations Plugin */}
+        <EquationsPlugin />
+
         {/* Page Break Plugin */}
         <PageBreakPlugin />
         
