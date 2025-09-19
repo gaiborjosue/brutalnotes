@@ -13,8 +13,23 @@ import {
 } from '../database-service'
 import type { FileNode } from '../types'
 
-const ELECTRIC_PROXY_URL =
-  import.meta.env.VITE_ELECTRIC_PROXY_URL || '/api/v1/electric/shape'
+function getElectricProxyUrl(): string {
+  const envUrl = import.meta.env.VITE_ELECTRIC_PROXY_URL || '/api/v1/electric/shape'
+  
+  // If it's already a full URL, return as-is
+  if (envUrl.startsWith('http://') || envUrl.startsWith('https://')) {
+    return envUrl
+  }
+  
+  // If it's a relative URL, construct full URL from window.location
+  if (typeof window !== 'undefined') {
+    const baseUrl = `${window.location.protocol}//${window.location.host}`
+    return new URL(envUrl, baseUrl).toString()
+  }
+  
+  // Fallback for SSR
+  return envUrl
+}
 
 function authHeaders() {
   return {
@@ -45,7 +60,7 @@ export function useTodosShape() {
   const shouldInitialize = !authLoading && !!user
   
   const shape = useShape<TodoRow>({
-    url: shouldInitialize ? ELECTRIC_PROXY_URL : '', // Disable by providing empty URL
+    url: shouldInitialize ? getElectricProxyUrl() : '', // Disable by providing empty URL
     params: shouldInitialize ? {
       table: 'todos',
       where: 'deleted_at IS NULL',
@@ -101,7 +116,7 @@ export function useNotesShape() {
   const shouldInitialize = !authLoading && !!user
   
   const shape = useShape<NoteRow>({
-    url: shouldInitialize ? ELECTRIC_PROXY_URL : '', // Disable by providing empty URL
+    url: shouldInitialize ? getElectricProxyUrl() : '', // Disable by providing empty URL
     params: shouldInitialize ? {
       table: 'notes',
       where: 'deleted_at IS NULL',
