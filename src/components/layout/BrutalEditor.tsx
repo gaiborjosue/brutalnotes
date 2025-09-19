@@ -89,6 +89,73 @@ import { editorTheme } from "@/components/editor/themes/editor-theme"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { NoteService } from "@/lib/database-service"
 
+
+// Module-level cache to prevent duplicate temp folder creation
+const tempFolderCache: { id: number | undefined; creatingPromise: Promise<number | undefined> | null } = {
+  id: undefined,
+  creatingPromise: null
+}
+
+const getOrCreateTempFolder = async (): Promise<number | undefined> => {
+  // If we have a cached ID, verify it still exists
+  if (tempFolderCache.id) {
+    const allNotes = await NoteService.getAllNotes()
+    if (allNotes.success && allNotes.data) {
+      const tempFolderExists = allNotes.data.find(note => 
+        note.id === tempFolderCache.id && note.isFolder && note.title === 'temp'
+      )
+      if (tempFolderExists) {
+        return tempFolderCache.id
+      } else {
+        tempFolderCache.id = undefined
+      }
+    }
+  }
+
+  // If creation is already in progress, wait for it
+  if (tempFolderCache.creatingPromise) {
+    return await tempFolderCache.creatingPromise
+  }
+
+  // Start creation
+  tempFolderCache.creatingPromise = (async () => {
+    try {
+      // Try to find existing temp folder first
+      const allNotes = await NoteService.getAllNotes()
+      if (allNotes.success && allNotes.data) {
+        const tempFolder = allNotes.data.find(note => 
+          note.isFolder && note.title === 'temp'
+        )
+        if (tempFolder) {
+          tempFolderCache.id = tempFolder.id
+          return tempFolder.id
+        }
+      }
+
+      // Create new temp folder
+      console.log('🔧 Creating missing temp folder for auto-save')
+      const tempFolderResult = await NoteService.createNote(
+        'temp',
+        '',
+        'temp',
+        true // isFolder
+      )
+      
+      if (tempFolderResult.success && tempFolderResult.data?.id) {
+        tempFolderCache.id = tempFolderResult.data.id
+        return tempFolderResult.data.id
+      } else {
+        console.error('❌ Failed to create temp folder for auto-save:', tempFolderResult.error)
+        return undefined
+      }
+    } finally {
+      tempFolderCache.creatingPromise = null
+    }
+  })()
+
+  return await tempFolderCache.creatingPromise
+}
+
 const initialValue = {
   root: {
     children: [
@@ -539,22 +606,12 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
             const editorState = editor.getEditorState()
             const contentJson = JSON.stringify(editorState.toJSON())
             
-            // Find temp folder for saving
-            const allNotes = await NoteService.getAllNotes()
-            let tempFolderId: number | undefined
-
-            if (allNotes.success && allNotes.data) {
-              const tempFolder = allNotes.data.find(note => 
-                note.isFolder && note.title === 'temp'
-              )
-              tempFolderId = tempFolder?.id
-            }
-
+            // Get or create temp folder
+            const tempFolderId = await getOrCreateTempFolder()
             if (!tempFolderId) {
-              console.error('❌ Temp folder not found')
+              console.error('❌ Failed to get temp folder for auto-save')
               return
             }
-
             if (currentDraftFileId) {
               // Update existing temporary note
               await NoteService.updateNote(currentDraftFileId, {

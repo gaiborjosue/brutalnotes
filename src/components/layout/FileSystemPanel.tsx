@@ -42,6 +42,55 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   const [editingName, setEditingName] = useState("")
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
+
+  // Ensure temp folder exists on component mount
+  useEffect(() => {
+    const ensureTempFolder = async () => {
+      if (isInitialized || isInitialLoading) return
+      
+      try {
+        const allNotes = await NoteService.getAllNotes()
+        if (allNotes.success && allNotes.data) {
+          const tempFolders = allNotes.data.filter(note => 
+            note.isFolder && note.title === 'temp'
+          )
+          
+          if (tempFolders.length === 0) {
+            console.log('🔧 Initializing temp folder for new user')
+            const tempFolderResult = await NoteService.createNote(
+              'temp',
+              '',
+              'temp',
+              true // isFolder
+            )
+            
+            if (tempFolderResult.success) {
+              console.log('✅ Temp folder created successfully')
+            } else {
+              console.error('❌ Failed to create temp folder:', tempFolderResult.error)
+            }
+          } else if (tempFolders.length > 1) {
+            console.warn('⚠️ Multiple temp folders detected:', tempFolders.length)
+            // Keep only the first temp folder, delete the others
+            for (let i = 1; i < tempFolders.length; i++) {
+              const extraTempFolder = tempFolders[i]
+              if (extraTempFolder.id) {
+                console.log(`🗑️ Removing duplicate temp folder: ${extraTempFolder.id}`)
+                await NoteService.deleteNote(extraTempFolder.id)
+              }
+            }
+          }
+        }
+        setIsInitialized(true)
+      } catch (error) {
+        console.error('Error ensuring temp folder exists:', error)
+        setIsInitialized(true)
+      }
+    }
+
+    ensureTempFolder()
+  }, [isInitialLoading, isInitialized])
 
   const mergeTreeState = useCallback((previous: FileNode[], next: FileNode[]): FileNode[] => {
     const previousExpanded = new Map(previous.map(node => [node.id, node]))
@@ -227,10 +276,23 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         tempFolderId = tempFolder?.id
       }
 
-      // Temp folder should always exist after database initialization
+      // If temp folder doesn't exist, create it first
       if (!tempFolderId) {
-        console.error('❌ Temp folder not found - database initialization may have failed')
-        return
+        console.log('🔧 Creating missing temp folder')
+        const tempFolderResult = await NoteService.createNote(
+          'temp',
+          '',
+          'temp',
+          true // isFolder
+        )
+        
+        if (tempFolderResult.success && tempFolderResult.data?.id) {
+          tempFolderId = tempFolderResult.data.id
+          await refreshFileTree() // Refresh to show the new temp folder
+        } else {
+          console.error('❌ Failed to create temp folder:', tempFolderResult.error)
+          return
+        }
       }
 
       // Create empty note with default content
@@ -498,6 +560,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
                     size="sm"
                     className="w-full justify-start text-left font-mono text-xs text-red-600 border-2 border-black hover:bg-blue-300 bg-white"
                     onClick={() => node.noteId && deleteFile(node.id)}
+                    disabled={node.type === 'folder' && node.name === 'temp'}
                   >
                     <Trash2 className="h-3 w-3 mr-2" />
                     Delete
