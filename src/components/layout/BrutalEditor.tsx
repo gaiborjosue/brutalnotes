@@ -58,8 +58,7 @@ import { FontColorToolbarPlugin } from "@/components/editor/plugins/toolbar/font
 import { FontBackgroundToolbarPlugin } from "@/components/editor/plugins/toolbar/font-background-toolbar-plugin"
 import { FontSizeToolbarPlugin } from "@/components/editor/plugins/toolbar/font-size-toolbar-plugin"
 import { CodeLanguageToolbarPlugin } from "@/components/editor/plugins/toolbar/code-language-toolbar-plugin"
-import { SummarizeToolbarPlugin } from "@/components/editor/plugins/toolbar/summarize-toolbar-plugin"
-import { ProofreadToolbarPlugin } from "@/components/editor/plugins/toolbar/proofread-toolbar-plugin"
+import { AssistancePlugin } from "@/components/editor/plugins/toolbar/assistance-plugin"
 import { ProofreadingPanel } from "@/components/editor/plugins/toolbar/ProofreadingPanel"
 import { BlockFormatDropDown } from "@/components/editor/plugins/toolbar/block-format-toolbar-plugin"
 import { FormatBulletedList } from "@/components/editor/plugins/toolbar/block-format/format-bulleted-list"
@@ -593,8 +592,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
             <FontColorToolbarPlugin />
             <FontBackgroundToolbarPlugin />
             <div className="w-px h-6 bg-black mx-1" />
-            <SummarizeToolbarPlugin />
-            <ProofreadToolbarPlugin onProofreadingResult={onProofreadingResult} />
+            <AssistancePlugin onProofreadingResult={onProofreadingResult} />
           </div>
         )}
       </ToolbarPlugin>
@@ -607,6 +605,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
                      <div className="" ref={onRef}>
                        <ContentEditable
                          placeholder={placeholder}
+                           placeholderClassName="pointer-events-none absolute top-0 left-0 p-6 pr-24 font-mono text-lg leading-7 text-neutral-400"
                          className="outline-none font-mono text-lg leading-7 typewriter pr-24 w-full min-h-full"
                        />
                      </div>
@@ -695,7 +694,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
                  <div className="flex justify-center">
                    <CounterCharacterPlugin charset="UTF-16" />
                  </div>
-                 <div className="flex flex-1 justify-end gap-2">
+                <div id="editor-actions-right" className="relative flex flex-1 justify-end gap-2">
                    <ShareNotePlugin />
                    <ClearEditorActionPlugin />
                  </div>
