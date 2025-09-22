@@ -605,6 +605,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
                      <div className="" ref={onRef}>
                        <ContentEditable
                          placeholder={placeholder}
+                           placeholderClassName="pointer-events-none absolute top-0 left-0 p-6 pr-24 font-mono text-lg leading-7 text-neutral-400"
                          className="outline-none font-mono text-lg leading-7 typewriter pr-24 w-full min-h-full"
                        />
                      </div>
