@@ -45,7 +45,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     isInitialLoading, 
     isSyncing, 
     isLiveSync,
-    error,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     refresh: refreshNotes
   } = useNotes()
   const [fileTree, setFileTree] = useState<FileNode[]>([])
