@@ -22,7 +22,7 @@ export const AuthContainer: React.FC = () => {
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-black text-black mb-2 flex items-center justify-center gap-2">
             <Star11 size={32} color="#000" />
-            BRUTAL NOTES
+            BRUTAL NOTE
           </CardTitle>
           <CardDescription className="text-lg font-bold text-gray-700">
             {isSignUp ? 'CREATE YOUR ACCOUNT' : 'WELCOME BACK'}

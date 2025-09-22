@@ -9,7 +9,7 @@ export const AuthLoader: React.FC = () => {
             <span className="text-2xl font-black">🔥</span>
           </div>
         </div>
-        <h2 className="text-2xl font-black text-black">BRUTAL NOTES</h2>
+        <h2 className="text-2xl font-black text-black">BRUTAL NOTE</h2>
         <p className="text-lg font-bold text-gray-700 mt-2">Loading...</p>
       </div>
     </div>

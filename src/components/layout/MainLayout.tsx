@@ -406,7 +406,7 @@ export function MainLayout() {
                     </Sheet>
                     
                     <Star24 size={32} color="#000" />
-                    BRUTAL NOTES
+                    BRUTAL NOTE
                   </div>
                   <div className="flex items-center gap-2">
                     {/* Connectivity Status - subtle and contextual */}
