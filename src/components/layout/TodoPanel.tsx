@@ -6,41 +6,47 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Plus, Trash2 } from "lucide-react"
 import Star10 from "@/components/stars/s10"
-import { TodoService } from "@/lib/database-service"
-import { useTodosShape } from "@/lib/electric/shapes"
+import { useTodos } from "@/hooks"
 
 export function TodoPanel() {
   const [newTodo, setNewTodo] = useState("")
-  const { todos, shape, isInitialLoading, isSyncing, isLiveSync } = useTodosShape()
+  const { 
+    todos, 
+    addTodo, 
+    toggleTodo, 
+    deleteTodo, 
+    isInitialLoading, 
+    isSyncing, 
+    isLiveSync,
+    error: syncError 
+  } = useTodos()
 
-  const loading = shape.isLoading
-  const syncError = shape.isError ? String(shape.error) : null
-
-  const addTodo = async () => {
+  const addTodoHandler = async () => {
     if (!newTodo.trim()) {
       return
     }
 
-    const result = await TodoService.addTodo(newTodo.trim())
-    if (!result.success) {
-      console.error('Failed to add todo:', result.error)
-      return
-    }
-
-    setNewTodo("")
-  }
-
-  const toggleTodo = async (id: number) => {
-    const result = await TodoService.toggleTodo(id)
-    if (!result.success) {
-      console.error('Failed to toggle todo:', result.error)
+    try {
+      await addTodo(newTodo.trim())
+      setNewTodo("")
+    } catch (error) {
+      console.error('Failed to add todo:', error)
     }
   }
 
-  const deleteTodo = async (id: number) => {
-    const result = await TodoService.deleteTodo(id)
-    if (!result.success) {
-      console.error('Failed to delete todo:', result.error)
+  const toggleTodoHandler = async (id: number) => {
+    try {
+      await toggleTodo(id)
+    } catch (error) {
+      console.error('Failed to toggle todo:', error)
+    }
+  }
+
+  const deleteTodoHandler = async (id: number) => {
+    try {
+      await deleteTodo(id)
+    } catch (error) {
+      console.error('Failed to delete todo:', error)
     }
   }
 
@@ -88,12 +94,12 @@ export function TodoPanel() {
               className="flex-1 border-2 border-black font-mono text-sm"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  void addTodo()
+                  void addTodoHandler()
                 }
               }}
             />
             <Button
-              onClick={() => void addTodo()}
+              onClick={() => void addTodoHandler()}
               size="sm"
               className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-green-400 hover:bg-green-500 text-black font-black"
             >
@@ -103,7 +109,7 @@ export function TodoPanel() {
 
           <ScrollArea className="flex-1 min-h-0">
             <div className="space-y-2">
-              {loading ? (
+              {isInitialLoading ? (
                 <div className="text-center text-gray-500 font-mono">Loading todos...</div>
               ) : todos.length === 0 ? (
                 <div className="text-center text-gray-500 font-mono text-sm">
@@ -119,7 +125,7 @@ export function TodoPanel() {
                       checked={todo.completed}
                       onCheckedChange={() => {
                         if (todo.id) {
-                          void toggleTodo(todo.id)
+                          void toggleTodoHandler(todo.id)
                         }
                       }}
                       className="border-2 border-black"
@@ -143,7 +149,7 @@ export function TodoPanel() {
                       <Button
                         onClick={() => {
                           if (todo.id) {
-                            void deleteTodo(todo.id)
+                            void deleteTodoHandler(todo.id)
                           }
                         }}
                         size="sm"

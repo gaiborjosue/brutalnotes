@@ -87,74 +87,8 @@ import { CodeActionMenuPlugin } from "@/components/editor/plugins/code-action-me
 import { ContextMenuPlugin } from "@/components/editor/plugins/context-menu-plugin"
 import { editorTheme } from "@/components/editor/themes/editor-theme"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { NoteService } from "@/lib/database-service"
+import { useNotes } from "@/hooks"
 
-
-// Module-level cache to prevent duplicate temp folder creation
-const tempFolderCache: { id: number | undefined; creatingPromise: Promise<number | undefined> | null } = {
-  id: undefined,
-  creatingPromise: null
-}
-
-const getOrCreateTempFolder = async (): Promise<number | undefined> => {
-  // If we have a cached ID, verify it still exists
-  if (tempFolderCache.id) {
-    const allNotes = await NoteService.getAllNotes()
-    if (allNotes.success && allNotes.data) {
-      const tempFolderExists = allNotes.data.find(note => 
-        note.id === tempFolderCache.id && note.isFolder && note.title === 'temp'
-      )
-      if (tempFolderExists) {
-        return tempFolderCache.id
-      } else {
-        tempFolderCache.id = undefined
-      }
-    }
-  }
-
-  // If creation is already in progress, wait for it
-  if (tempFolderCache.creatingPromise) {
-    return await tempFolderCache.creatingPromise
-  }
-
-  // Start creation
-  tempFolderCache.creatingPromise = (async () => {
-    try {
-      // Try to find existing temp folder first
-      const allNotes = await NoteService.getAllNotes()
-      if (allNotes.success && allNotes.data) {
-        const tempFolder = allNotes.data.find(note => 
-          note.isFolder && note.title === 'temp'
-        )
-        if (tempFolder) {
-          tempFolderCache.id = tempFolder.id
-          return tempFolder.id
-        }
-      }
-
-      // Create new temp folder
-      console.log('🔧 Creating missing temp folder for auto-save')
-      const tempFolderResult = await NoteService.createNote(
-        'temp',
-        '',
-        'temp',
-        true // isFolder
-      )
-      
-      if (tempFolderResult.success && tempFolderResult.data?.id) {
-        tempFolderCache.id = tempFolderResult.data.id
-        return tempFolderResult.data.id
-      } else {
-        console.error('❌ Failed to create temp folder for auto-save:', tempFolderResult.error)
-        return undefined
-      }
-    } finally {
-      tempFolderCache.creatingPromise = null
-    }
-  })()
-
-  return await tempFolderCache.creatingPromise
-}
 
 const initialValue = {
   root: {
@@ -218,9 +152,47 @@ interface BrutalEditorProps {
 }
 
 export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning, onCurrentFileChange, currentFileId, onInsertContent, onReplaceContent }: BrutalEditorProps = {}) {
+  const notesHook = useNotes()
+  const { notes, createNote: createNoteHook, updateNote: updateNoteHook, getNoteById } = notesHook
   const [editorState, setEditorState] = useState<SerializedEditorState>(initialValue)
   const [currentDraftFileId, setCurrentDraftFileId] = useState<number | null>(null)
   const [currentFileName, setCurrentFileName] = useState<string | null>(null)
+  
+  // Create stable references to hook functions for use in callbacks
+  const createNote = useCallback(createNoteHook, [createNoteHook])
+  const updateNote = useCallback(updateNoteHook, [updateNoteHook])
+  
+  // Get or create temp folder for auto-save
+  const getOrCreateTempFolder = useCallback(async (): Promise<number | undefined> => {
+    try {
+      // Try to find existing temp folder first
+      const tempFolder = notes.find(note => 
+        note.isFolder && note.title === 'temp'
+      )
+      if (tempFolder) {
+        return tempFolder.id
+      }
+
+      // Create new temp folder
+      console.log('🔧 Creating missing temp folder for auto-save')
+      const newTempFolder = await createNote(
+        'temp',
+        '',
+        'temp',
+        true // isFolder
+      )
+      
+      if (newTempFolder?.id) {
+        return newTempFolder.id
+      } else {
+        console.error('❌ Failed to create temp folder for auto-save')
+        return undefined
+      }
+    } catch (error) {
+      console.error('❌ Error in getOrCreateTempFolder:', error)
+      return undefined
+    }
+  }, [notes, createNote])
   
   // Proofreading panel state
   const [proofreadingData, setProofreadingData] = useState<{
@@ -243,12 +215,12 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
     const fetchFileName = async () => {
       if (currentFileId) {
         try {
-          const result = await NoteService.getNoteById(currentFileId)
-          if (result.success && result.data) {
+          const note = await getNoteById(currentFileId)
+          if (note) {
             // Remove .lexical extension for display
-            const displayName = result.data.title.endsWith('.lexical') 
-              ? result.data.title.slice(0, -8)
-              : result.data.title
+            const displayName = note.title.endsWith('.lexical') 
+              ? note.title.slice(0, -8)
+              : note.title
             setCurrentFileName(displayName)
           } else {
             setCurrentFileName(null)
@@ -261,11 +233,9 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
         setCurrentFileName(null)
       }
     }
-    
-    fetchFileName()
-  }, [currentFileId])
 
-  // Combined handler for current file changes
+    fetchFileName()
+  }, [currentFileId, getNoteById])  // Combined handler for current file changes
   const handleCurrentFileChange = useCallback((fileId: number | null) => {
     setCurrentDraftFileId(fileId) // Update internal state
     onCurrentFileChange?.(fileId)   // Notify parent (MainLayout)
@@ -313,6 +283,9 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
               replaceEditorContentRef={replaceEditorContentRef}
               onInsertContent={onInsertContent}
               onReplaceContent={onReplaceContent}
+              getOrCreateTempFolder={getOrCreateTempFolder}
+              createNote={createNote}
+              updateNote={updateNote}
             />
 
             <OnChangePlugin
@@ -342,7 +315,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
 
 const placeholder = `Start writing here...`
 
-function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, replaceEditorContentRef, onInsertContent, onReplaceContent }: { 
+function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, replaceEditorContentRef, onInsertContent, onReplaceContent, getOrCreateTempFolder, createNote, updateNote }: { 
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   currentDraftFileId?: number | null
@@ -363,9 +336,71 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
   replaceEditorContentRef?: React.MutableRefObject<((text: string) => void) | null>
   onInsertContent?: (insertFunction: (content: string) => void) => void
   onReplaceContent?: (replaceFunction: ((content: string) => void) | null) => void
+  getOrCreateTempFolder?: () => Promise<number | undefined>
+  createNote?: (title: string, content: string, path: string, isFolder?: boolean, parentId?: number) => Promise<{ id?: number } | null>
+  updateNote?: (id: number, updates: { content?: string; updatedAt?: Date }) => Promise<boolean>
 }) {
   const [editor] = useLexicalComposerContext()
   const contentEditableRef = useRef<HTMLDivElement>(null)
+  
+  // Create manual save handler with access to editor context
+  const handleManualSave = useCallback(async () => {
+    if (!getOrCreateTempFolder || !createNote || !updateNote) {
+      console.error('❌ Required functions not available for manual save')
+      return
+    }
+
+    // Manual save functionality for unsaved changes dialog
+    const editorState = editor.getEditorState()
+    const contentJson = JSON.stringify(editorState.toJSON())
+    
+    // Get or create temp folder
+    const tempFolderId = await getOrCreateTempFolder()
+    if (!tempFolderId) {
+      console.error('❌ Failed to get temp folder for auto-save')
+      return
+    }
+    
+    if (currentDraftFileId) {
+      // Update existing temporary note
+      await updateNote(currentDraftFileId, {
+        content: contentJson,
+        updatedAt: new Date()
+      })
+
+      window.dispatchEvent(
+        new CustomEvent('noteSaved', {
+          detail: {
+            fileId: currentDraftFileId,
+            content: contentJson
+          }
+        })
+      )
+    } else {
+      // Create new temporary note
+      const fileName = `Draft-${Date.now()}.lexical`
+      const newNote = await createNote(
+        fileName,
+        contentJson,
+        `/temp/${fileName}`,
+        false,
+        tempFolderId
+      )
+      if (newNote?.id) {
+        onCurrentFileChange?.(newNote.id)
+
+        window.dispatchEvent(
+          new CustomEvent('noteSaved', {
+            detail: {
+              fileId: newNote.id,
+              content: contentJson
+            }
+          })
+        )
+      }
+    }
+    onFileSaved?.()
+  }, [editor, getOrCreateTempFolder, currentDraftFileId, updateNote, createNote, onCurrentFileChange, onFileSaved])
   
   // Set up the editor content replacement function
   useEffect(() => {
@@ -601,57 +636,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
         <UnsavedChangesPlugin
           currentFileId={currentDraftFileId ?? null}
           onUnsavedChangesChange={onUnsavedChangesWarning}
-          onManualSave={async () => {
-            // Manual save functionality for unsaved changes dialog
-            const editorState = editor.getEditorState()
-            const contentJson = JSON.stringify(editorState.toJSON())
-            
-            // Get or create temp folder
-            const tempFolderId = await getOrCreateTempFolder()
-            if (!tempFolderId) {
-              console.error('❌ Failed to get temp folder for auto-save')
-              return
-            }
-            if (currentDraftFileId) {
-              // Update existing temporary note
-              await NoteService.updateNote(currentDraftFileId, {
-                content: contentJson,
-                updatedAt: new Date()
-              })
-
-              window.dispatchEvent(
-                new CustomEvent('noteSaved', {
-                  detail: {
-                    fileId: currentDraftFileId,
-                    content: contentJson
-                  }
-                })
-              )
-            } else {
-              // Create new temporary note
-              const fileName = `Draft-${Date.now()}.lexical`
-              const result = await NoteService.createNote(
-                fileName,
-                contentJson,
-                `/temp/${fileName}`,
-                false,
-                tempFolderId
-              )
-              if (result.success && result.data?.id) {
-                onCurrentFileChange?.(result.data.id)
-
-                window.dispatchEvent(
-                  new CustomEvent('noteSaved', {
-                    detail: {
-                      fileId: result.data.id,
-                      content: contentJson
-                    }
-                  })
-                )
-              }
-            }
-            onFileSaved?.()
-          }}
+          onManualSave={handleManualSave}
         />
       </div>
       

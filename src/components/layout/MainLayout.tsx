@@ -9,7 +9,7 @@ import { FileSystemPanel } from "./FileSystemPanel"
 import { RecordingPanel } from "./RecordingPanel"
 import { BrutalEditor } from "./BrutalEditor"
 import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-changes-dialog"
-import { NoteService } from "@/lib/database-service"
+import { useNotes } from "@/hooks"
 import { Menu, LogOut, Wifi, WifiOff } from "lucide-react"
 import Star24 from "@/components/stars/s24"
 import { useAuth } from "@/contexts/AuthContext"
@@ -17,6 +17,7 @@ import { ScanNotesPopover } from "@/features/scan-notes/ScanNotesPopover"
 
 export function MainLayout() {
   const { user, signOut } = useAuth()
+  const { getNoteById } = useNotes()
   const fileSystemRef = useRef<{ refreshFileTree: () => Promise<void> } | null>(null)
   const [loadFileContent, setLoadFileContent] = useState<((content: string, fileId: number) => void) | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
@@ -182,12 +183,12 @@ export function MainLayout() {
       // Load file content into editor
       if (loadFileContent) {
         try {
-          const result = await NoteService.getNoteById(noteId)
-          if (result.success && result.data) {
-            loadFileContent(result.data.content, noteId)
+          const note = await getNoteById(noteId)
+          if (note) {
+            loadFileContent(note.content, noteId)
             setCurrentFileId(noteId) // Track the currently opened file
           } else {
-            console.error('Failed to load file:', result.error)
+            console.error('Failed to load file: Note not found')
           }
         } catch (error) {
           console.error('Error loading file:', error)

@@ -16,9 +16,8 @@ import {
   Trash
 } from "lucide-react"
 import Star27 from "@/components/stars/s27"
-import { NoteService } from "@/lib/database-service"
 import type { FileNode } from "@/lib/types"
-import { useNotesShape } from "@/lib/electric/shapes"
+import { useNotes } from "@/hooks"
 import nickGenerator from "nick-generator"
 
 
@@ -36,7 +35,19 @@ interface FileSystemPanelProps {
 }
 
 export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick, onFileDeleted, onFolderCleared, currentFileId, beforeFileMove }, ref) => {
-  const { notes, fileTree: shapeFileTree, shape, isInitialLoading, isSyncing, isLiveSync } = useNotesShape()
+  const { 
+    notes, 
+    fileTree: shapeFileTree, 
+    createNote, 
+    updateNote, 
+    deleteNote, 
+    getNoteById,
+    isInitialLoading, 
+    isSyncing, 
+    isLiveSync,
+    error,
+    refresh: refreshNotes
+  } = useNotes()
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [editingFile, setEditingFile] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
@@ -50,35 +61,26 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       if (isInitialized || isInitialLoading) return
       
       try {
-        const allNotes = await NoteService.getAllNotes()
-        if (allNotes.success && allNotes.data) {
-          const tempFolders = allNotes.data.filter(note => 
-            note.isFolder && note.title === 'temp'
-          )
-          
-          if (tempFolders.length === 0) {
-            console.log('🔧 Initializing temp folder for new user')
-            const tempFolderResult = await NoteService.createNote(
-              'temp',
-              '',
-              'temp',
-              true // isFolder
-            )
-            
-            if (tempFolderResult.success) {
-              console.log('✅ Temp folder created successfully')
-            } else {
-              console.error('❌ Failed to create temp folder:', tempFolderResult.error)
-            }
-          } else if (tempFolders.length > 1) {
-            console.warn('⚠️ Multiple temp folders detected:', tempFolders.length)
-            // Keep only the first temp folder, delete the others
-            for (let i = 1; i < tempFolders.length; i++) {
-              const extraTempFolder = tempFolders[i]
-              if (extraTempFolder.id) {
-                console.log(`🗑️ Removing duplicate temp folder: ${extraTempFolder.id}`)
-                await NoteService.deleteNote(extraTempFolder.id)
-              }
+        const tempFolders = notes.filter(note => 
+          note.isFolder && note.title === 'temp'
+        )
+        
+        if (tempFolders.length === 0) {
+          console.log('🔧 Initializing temp folder for new user')
+          try {
+            await createNote('temp', '', 'temp', true, undefined)
+            console.log('✅ Temp folder created successfully')
+          } catch (error) {
+            console.error('❌ Failed to create temp folder:', error)
+          }
+        } else if (tempFolders.length > 1) {
+          console.warn('⚠️ Multiple temp folders detected:', tempFolders.length)
+          // Keep only the first temp folder, delete the others
+          for (let i = 1; i < tempFolders.length; i++) {
+            const extraTempFolder = tempFolders[i]
+            if (extraTempFolder.id) {
+              console.log(`🗑️ Removing duplicate temp folder: ${extraTempFolder.id}`)
+              await deleteNote(extraTempFolder.id)
             }
           }
         }
@@ -90,7 +92,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     }
 
     ensureTempFolder()
-  }, [isInitialLoading, isInitialized])
+  }, [isInitialLoading, isInitialized, notes, createNote, deleteNote])
 
   const mergeTreeState = useCallback((previous: FileNode[], next: FileNode[]): FileNode[] => {
     const previousExpanded = new Map(previous.map(node => [node.id, node]))
@@ -116,8 +118,6 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     setFileTree(prev => mergeTreeState(prev, shapeFileTree))
   }, [mergeTreeState, shapeFileTree])
 
-  const loading = shape.isLoading
-
   // Expose refreshFileTree to parent component
   useImperativeHandle(ref, () => ({
     refreshFileTree
@@ -140,14 +140,14 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
 
   const deleteFile = async (id: string) => {
     const noteId = parseInt(id)
-    const result = await NoteService.deleteNote(noteId)
-    if (result.success) {
+    try {
+      await deleteNote(noteId)
       // Notify parent that file was deleted
       onFileDeleted?.(noteId)
       // Refresh the file tree
       await refreshFileTree()
-    } else {
-      console.error('Failed to delete file:', result.error)
+    } catch (error) {
+      console.error('Failed to delete file:', error)
     }
   }
 
@@ -164,11 +164,11 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       const deletedNoteIds: number[] = []
       for (const note of notesToDelete) {
         if (note.id) {
-          const result = await NoteService.deleteNote(note.id)
-          if (result.success) {
+          try {
+            await deleteNote(note.id)
             deletedNoteIds.push(note.id)
-          } else {
-            console.error(`Failed to delete note ${note.title}:`, result.error)
+          } catch (error) {
+            console.error(`Failed to delete note ${note.title}:`, error)
           }
         }
       }
@@ -200,10 +200,9 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       const noteId = parseInt(editingFile)
       
       // Get the note to check if it's a file or folder
-      const noteResult = await NoteService.getNoteById(noteId)
-      if (noteResult.success && noteResult.data) {
-        const note = noteResult.data
-        if (note.isFolder && note.title === 'temp') {
+      try {
+        const note = await getNoteById(noteId)
+        if (note && note.isFolder && note.title === 'temp') {
           setEditingFile(null)
           setEditingName("")
           return
@@ -211,20 +210,16 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         let newTitle = editingName.trim()
         
         // If it's a file and doesn't end with .lexical, add it
-        if (!note.isFolder && !newTitle.endsWith('.lexical')) {
+        if (note && !note.isFolder && !newTitle.endsWith('.lexical')) {
           newTitle = `${newTitle}.lexical`
         }
         
-        const result = await NoteService.updateNote(noteId, { 
-          title: newTitle
-        })
+        await updateNote(noteId, { title: newTitle })
         
-        if (result.success) {
-          // Refresh the file tree
-          await refreshFileTree()
-        } else {
-          console.error('Failed to rename file:', result.error)
-        }
+        // Refresh the file tree
+        await refreshFileTree()
+      } catch (error) {
+        console.error('Failed to rename file:', error)
       }
     }
     setEditingFile(null)
@@ -240,22 +235,20 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   const createNewFolder = async () => {
     try {
       const folderName = `New Folder ${Date.now()}`
-      const result = await NoteService.createNote(
+      const newFolder = await createNote(
         folderName,
         '',
         folderName,
         true // isFolder
       )
       
-      if (result.success) {
+      if (newFolder) {
         await refreshFileTree()
         // Auto-start renaming the new folder
-        if (result.data?.id) {
-          setEditingFile(result.data.id.toString())
+        if (newFolder.id) {
+          setEditingFile(newFolder.id.toString())
           setEditingName(folderName)
         }
-      } else {
-        console.error('Failed to create folder:', result.error)
       }
     } catch (error) {
       console.error('Error creating folder:', error)
@@ -266,31 +259,28 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   const createNewNote = async () => {
     try {
       // Find temp folder (should always exist since database is initialized first)
-      const allNotes = await NoteService.getAllNotes()
       let tempFolderId: number | undefined
 
-      if (allNotes.success && allNotes.data) {
-        const tempFolder = allNotes.data.find(note => 
-          note.isFolder && note.title === 'temp'
-        )
-        tempFolderId = tempFolder?.id
-      }
+      const tempFolder = notes.find(note => 
+        note.isFolder && note.title === 'temp'
+      )
+      tempFolderId = tempFolder?.id
 
       // If temp folder doesn't exist, create it first
       if (!tempFolderId) {
         console.log('🔧 Creating missing temp folder')
-        const tempFolderResult = await NoteService.createNote(
+        const newTempFolder = await createNote(
           'temp',
           '',
           'temp',
           true // isFolder
         )
         
-        if (tempFolderResult.success && tempFolderResult.data?.id) {
-          tempFolderId = tempFolderResult.data.id
+        if (newTempFolder?.id) {
+          tempFolderId = newTempFolder.id
           await refreshFileTree() // Refresh to show the new temp folder
         } else {
-          console.error('❌ Failed to create temp folder:', tempFolderResult.error)
+          console.error('❌ Failed to create temp folder')
           return
         }
       }
@@ -319,7 +309,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       const baseName = nickGenerator()
 
       const noteName = `${baseName.split(' ')[0]}-${new Date().getDate()}-${new Date().getFullYear()}.lexical`
-      const result = await NoteService.createNote(
+      const newNote = await createNote(
         noteName,
         defaultContent,
         `temp/${noteName}`,
@@ -327,11 +317,11 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         tempFolderId
       )
       
-      if (result.success) {
+      if (newNote) {
         await refreshFileTree()
         // Auto-start renaming the new note
-        if (result.data?.id) {
-          const newId = result.data.id
+        if (newNote.id) {
+          const newId = newNote.id
           setEditingFile(newId.toString())
           // Remove .lexical for editing (user will see clean name)
           setEditingName(noteName.replace('.lexical', ''))
@@ -345,8 +335,6 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
             }
           }, 100)
         }
-      } else {
-        console.error('Failed to create note:', result.error)
       }
     } catch (error) {
       console.error('Error creating note:', error)
@@ -385,21 +373,18 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         const fileId = parseInt(draggedItem)
         const folderId = parseInt(targetFolderId)
         
-        const [fileResult, parentResult] = await Promise.all([
-          NoteService.getNoteById(fileId),
-          NoteService.getNoteById(folderId)
+        const [fileNote, parentNote] = await Promise.all([
+          getNoteById(fileId),
+          getNoteById(folderId)
         ])
 
-        if (!fileResult.success || !fileResult.data) {
+        if (!fileNote) {
           throw new Error('File to move not found')
         }
 
-        if (!parentResult.success || !parentResult.data) {
+        if (!parentNote) {
           throw new Error('Target folder not found')
         }
-
-        const fileNote = fileResult.data
-        const parentNote = parentResult.data
 
         const fileNameFromPath = fileNote.path
           ? fileNote.path.split('/').filter(Boolean).pop() ?? fileNote.title
@@ -414,20 +399,18 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         const newPath = normalizedParentPath ? `${normalizedParentPath}/${finalFileName}` : finalFileName
 
         const performMove = async () => {
-          const result = await NoteService.updateNote(fileId, {
-            parentId: folderId,
-            parentClientId: parentNote.clientId ?? folderId,
-            serverParentId: parentNote.serverId,
-            path: newPath
-          })
+          try {
+            await updateNote(fileId, {
+              parentId: folderId,
+              path: newPath
+            })
 
-          if (result.success) {
             // Refresh the file tree immediately so the user sees the new location
             await refreshFileTree()
 
             console.log('✅ File moved successfully!')
-          } else {
-            console.error('❌ Failed to move file:', result.error)
+          } catch (error) {
+            console.error('❌ Failed to move file:', error)
           }
         }
 
@@ -635,7 +618,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       <CardContent className="p-0 pt-0 flex-1 min-h-0">
         <ScrollArea className="h-full min-h-0">
           <div className="p-3 pb-4 space-y-1">
-            {loading ? (
+            {isInitialLoading ? (
               <div className="text-center text-gray-500 font-mono">Loading files...</div>
             ) : fileTree.length === 0 ? (
               <div className="text-center text-gray-500 font-mono text-sm">

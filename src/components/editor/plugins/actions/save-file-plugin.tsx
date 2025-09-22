@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Save, FileText } from "lucide-react"
-import { NoteService } from "@/lib/database-service"
+import { useNotes } from "@/hooks"
 
 interface SaveFilePluginProps {
   onFileSaved?: () => void
@@ -16,6 +16,7 @@ interface SaveFilePluginProps {
 
 export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileChange }: SaveFilePluginProps) {
   const [editor] = useLexicalComposerContext()
+  const { notes, getNoteById, createNote, updateNote } = useNotes()
   const [isOpen, setIsOpen] = useState(false)
   const [fileName, setFileName] = useState("")
   const [saving, setSaving] = useState(false)
@@ -25,14 +26,11 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
     if (isOpen && currentDraftFileId) {
       const loadFileName = async () => {
         try {
-          const allNotes = await NoteService.getAllNotes()
-          if (allNotes.success && allNotes.data) {
-            const currentFile = allNotes.data.find(note => note.id === currentDraftFileId)
-            if (currentFile) {
-              // Remove .lexical extension for editing
-              const nameWithoutExt = currentFile.title.replace('.lexical', '')
-              setFileName(nameWithoutExt)
-            }
+          const currentFile = await getNoteById(currentDraftFileId)
+          if (currentFile) {
+            // Remove .lexical extension for editing
+            const nameWithoutExt = currentFile.title.replace('.lexical', '')
+            setFileName(nameWithoutExt)
           }
         } catch (error) {
           console.error('Error loading current file name:', error)
@@ -42,7 +40,7 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
     } else if (isOpen) {
       setFileName("") // Clear if no draft file
     }
-  }, [isOpen, currentDraftFileId])
+  }, [isOpen, currentDraftFileId, getNoteById])
 
   const handleSave = async () => {
     if (!fileName.trim()) return
@@ -54,15 +52,10 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
       const contentJson = JSON.stringify(editorState.toJSON())
 
       // Find temp folder (should always exist since database is initialized first)
-      const allNotes = await NoteService.getAllNotes()
-      let tempFolderId: number | undefined
-
-      if (allNotes.success && allNotes.data) {
-        const tempFolder = allNotes.data.find(note => 
-          note.isFolder && note.title === 'temp'
-        )
-        tempFolderId = tempFolder?.id
-      }
+      const tempFolder = notes.find(note => 
+        note.isFolder && note.title === 'temp'
+      )
+      const tempFolderId = tempFolder?.id
 
       // Temp folder should always exist after database initialization
       if (!tempFolderId) {
@@ -80,23 +73,27 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
 
       // If we have a current draft file, update it with the new name
       if (currentDraftFileId) {
-        result = await NoteService.updateNote(currentDraftFileId, {
+        const success = await updateNote(currentDraftFileId, {
           title: noteTitle,
           content: contentJson,
           path: notePath,
           updatedAt: new Date()
         })
+        result = { success }
       } else {
         // Create new file
-        result = await NoteService.createNote(
+        const newNote = await createNote(
           noteTitle,
           contentJson,
           notePath,
           false, // isFolder
           tempFolderId
         )
-        if (result.success && result.data?.id) {
-          savedNoteId = result.data.id
+        if (newNote?.id) {
+          savedNoteId = newNote.id
+          result = { success: true, data: newNote }
+        } else {
+          result = { success: false }
         }
       }
 
@@ -119,7 +116,7 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
           })
         )
       } else {
-        console.error('❌ Failed to save file:', result.error)
+        console.error('❌ Failed to save file')
         alert('Failed to save file. Please try again.')
       }
     } catch (error) {

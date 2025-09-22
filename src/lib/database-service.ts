@@ -11,6 +11,7 @@ export interface TodoRow extends Record<string, unknown> {
   created_at: string
   updated_at: string
   deleted_at: string | null
+  _deleted: boolean
 }
 
 export interface NoteRow extends Record<string, unknown> {
@@ -25,6 +26,7 @@ export interface NoteRow extends Record<string, unknown> {
   created_at: string
   updated_at: string
   deleted_at: string | null
+  _deleted: boolean
 }
 
 async function requireUser() {
@@ -54,7 +56,7 @@ export function mapTodoRow(row: TodoRow): Todo {
     serverId: row.id,
     text: row.text,
     completed: row.completed,
-    deleted: Boolean(row.deleted_at),
+    deleted: Boolean(row._deleted),
     createdAt,
     updatedAt,
     syncStatus: SYNCED_STATUS,
@@ -76,7 +78,7 @@ export function mapNoteRow(row: NoteRow): Note {
     parentId: row.parent_client_id ?? undefined,
     parentClientId: row.parent_client_id ?? undefined,
     serverParentId: row.parent_id ?? undefined,
-    deleted: Boolean(row.deleted_at),
+    deleted: Boolean(row._deleted),
     createdAt,
     updatedAt,
     syncStatus: 'synced',
@@ -96,7 +98,7 @@ export class TodoService {
         .from('todos')
         .select('*')
         .eq('user_id', user.id)
-        .is('deleted_at', null)
+        .eq('_deleted', false) // Use boolean field instead of deleted_at
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -129,6 +131,39 @@ export class TodoService {
 
       if (error || !data) {
         return { success: false, error: error?.message ?? 'Failed to create todo' }
+      }
+
+      return { success: true, data: mapTodoRow(data as TodoRow) }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  }
+
+  static async updateTodo(id: number, updates: { text?: string; completed?: boolean }): Promise<DatabaseResult<Todo>> {
+    try {
+      const user = await requireUser()
+
+      const { data: existing, error: fetchError } = await supabase
+        .from('todos')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('client_id', id)
+        .single()
+
+      if (fetchError || !existing) {
+        return { success: false, error: fetchError?.message ?? 'Todo not found' }
+      }
+
+      const { data, error } = await supabase
+        .from('todos')
+        .update(updates)
+        .eq('user_id', user.id)
+        .eq('client_id', id)
+        .select()
+        .single()
+
+      if (error || !data) {
+        return { success: false, error: error?.message ?? 'Failed to update todo' }
       }
 
       return { success: true, data: mapTodoRow(data as TodoRow) }
@@ -180,7 +215,10 @@ export class TodoService {
 
       const { error } = await supabase
         .from('todos')
-        .update({ deleted_at: timestamp })
+        .update({ 
+          _deleted: true,
+          deleted_at: timestamp 
+        })
         .eq('user_id', user.id)
         .eq('client_id', id)
 
@@ -195,7 +233,7 @@ export class TodoService {
   }
 
   static async syncTodos(): Promise<DatabaseResult<void>> {
-    // Electric handles replication now, Supabase is the source of truth.
+    // Sync is now handled by the SyncService
     return { success: true }
   }
 }
@@ -216,7 +254,7 @@ export class NoteService {
         .order('created_at', { ascending: true })
 
       if (!includeDeleted) {
-        builder = builder.is('deleted_at', null)
+        builder = builder.eq('_deleted', false) // Use boolean field instead of deleted_at
       }
 
       const { data, error } = await builder
@@ -276,18 +314,32 @@ export class NoteService {
         parent_client_id: parentId ?? null,
       }
 
+      console.log('NoteService.createNote: Attempting to create note with payload:', insertPayload)
+
       const { data, error } = await supabase
         .from('notes')
         .insert(insertPayload)
         .select()
         .single()
 
-      if (error || !data) {
-        return { success: false, error: error?.message ?? 'Failed to create note' }
+      console.log('NoteService.createNote: Supabase response:', { data, error })
+
+      if (error) {
+        console.error('NoteService.createNote: Supabase error:', error)
+        return { success: false, error: error.message }
       }
 
-      return { success: true, data: mapNoteRow(data as NoteRow) }
+      if (!data) {
+        console.error('NoteService.createNote: No data returned from Supabase')
+        return { success: false, error: 'No data returned from database' }
+      }
+
+      const mappedNote = mapNoteRow(data as NoteRow)
+      console.log('NoteService.createNote: Successfully created note:', mappedNote)
+      
+      return { success: true, data: mappedNote }
     } catch (error) {
+      console.error('NoteService.createNote: Exception caught:', error)
       return { success: false, error: (error as Error).message }
     }
   }
@@ -345,7 +397,7 @@ export class NoteService {
           .select('client_id')
           .eq('user_id', user.id)
           .eq('parent_client_id', id)
-          .is('deleted_at', null)
+          .eq('_deleted', false) // Use boolean field instead of deleted_at
 
         if (childrenError) {
           return { success: false, error: childrenError.message }
@@ -363,7 +415,10 @@ export class NoteService {
       const timestamp = new Date().toISOString()
       const { error } = await supabase
         .from('notes')
-        .update({ deleted_at: timestamp })
+        .update({ 
+          _deleted: true,
+          deleted_at: timestamp 
+        })
         .eq('user_id', user.id)
         .eq('client_id', id)
 
