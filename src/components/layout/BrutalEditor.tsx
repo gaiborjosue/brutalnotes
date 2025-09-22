@@ -693,7 +693,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
                  <div className="flex justify-center">
                    <CounterCharacterPlugin charset="UTF-16" />
                  </div>
-                 <div className="flex flex-1 justify-end gap-2">
+                <div id="editor-actions-right" className="relative flex flex-1 justify-end gap-2">
                    <ShareNotePlugin />
                    <ClearEditorActionPlugin />
                  </div>

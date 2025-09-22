@@ -14,6 +14,7 @@ import { $createParagraphNode, $createTextNode } from "lexical"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger } from "@/components/ui/select"
 import Star28 from "@/components/stars/s28"
 import { proofreadMarkdown, type ProofreaderAPI } from "@/lib/markdown-proofreader"
+import { showProcessingToast } from "@/lib/share-utils"
 
 // Assistance dropdown that groups Summarize and Proofread actions
 export function AssistancePlugin({ onProofreadingResult }: { onProofreadingResult?: (data: {
@@ -146,6 +147,7 @@ function useSummarizeAction() {
   const handle = useCallback(async () => {
     if (!supported || busy) return
     setBusy(true)
+    const dismiss = showProcessingToast("Summarizing…")
     try {
       const editorState = activeEditor.getEditorState()
       let textContent = ""
@@ -214,6 +216,7 @@ function useSummarizeAction() {
       alert("Failed to generate summary. Please try again.")
       setDownloading(false)
     } finally {
+      dismiss()
       setBusy(false)
     }
   }, [supported, busy, availabilityStatus, activeEditor, downloading])
@@ -308,6 +311,7 @@ function useProofreadAction(onProofreadingResult?: (data: {
   const handleProofread = useCallback(async () => {
     if (!supported || busy) return
     setBusy(true)
+    const dismiss = showProcessingToast("Proofreading…")
     try {
       const editorState = activeEditor.getEditorState()
       let markdownContent = ""
@@ -357,6 +361,7 @@ function useProofreadAction(onProofreadingResult?: (data: {
       alert("Failed to proofread content. Please try again.")
       setDownloading(false)
     } finally {
+      dismiss()
       setBusy(false)
     }
   }, [supported, busy, availabilityStatus, activeEditor, downloading, onProofreadingResult])
