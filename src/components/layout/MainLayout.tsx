@@ -4,12 +4,14 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
+import { FocusTooltip } from "@/components/ui/focus-tooltip"
 import { TodoPanel } from "./TodoPanel"
 import { FileSystemPanel } from "./FileSystemPanel"
 import { RecordingPanel } from "./RecordingPanel"
 import { BrutalEditor } from "./BrutalEditor"
 import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-changes-dialog"
 import { useNotes } from "@/hooks"
+import { usePanelFocus } from "@/hooks/usePanelFocus"
 import { Menu, LogOut, Wifi, WifiOff } from "lucide-react"
 import Star24 from "@/components/stars/s24"
 import { useAuth } from "@/contexts/AuthContext"
@@ -23,6 +25,15 @@ export function MainLayout() {
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [currentFileId, setCurrentFileId] = useState<number | null>(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
+  
+  // Panel focus management for Ctrl+hover/click
+  const { 
+    handlePanelHover,
+    handlePanelLeave,
+    handlePanelClick,
+    isFocused,
+    shouldShowTooltip
+  } = usePanelFocus()
   
   // Editor content insertion/ref replacement helpers
   const insertContentRef = useRef<((content: string) => void) | null>(null)
@@ -225,12 +236,29 @@ export function MainLayout() {
   const renderSidebarPanels = () => (
     <div className="flex flex-col gap-2 h-full min-h-0">
       {/* Todo Panel */}
-      <div className="flex-1 min-h-0">
+      <div 
+        className={`flex-1 min-h-0 relative transition-all duration-200 ${
+          isFocused('todo') ? 'flex-[3] z-10' : ''
+        }`}
+        onMouseEnter={() => handlePanelHover('todo')}
+        onMouseLeave={handlePanelLeave}
+        onClick={() => handlePanelClick('todo')}
+      >
         <TodoPanel />
+        {shouldShowTooltip('todo') && (
+          <FocusTooltip show={true} isFocused={isFocused('todo')} />
+        )}
       </div>
       
       {/* File System Panel */}
-      <div className="flex-1 min-h-0">
+      <div 
+        className={`flex-1 min-h-0 relative transition-all duration-200 ${
+          isFocused('files') ? 'flex-[3] z-10' : ''
+        }`}
+        onMouseEnter={() => handlePanelHover('files')}
+        onMouseLeave={handlePanelLeave}
+        onClick={() => handlePanelClick('files')}
+      >
         <FileSystemPanel 
           ref={fileSystemRef} 
           onFileClick={handleFileClick}
@@ -256,11 +284,24 @@ export function MainLayout() {
           onFolderCleared={handleFolderCleared}
           currentFileId={currentFileId}
         />
+        {shouldShowTooltip('files') && (
+          <FocusTooltip show={true} isFocused={isFocused('files')} />
+        )}
       </div>
       
       {/* Recording Panel */}
-      <div className="flex-1 min-h-0">
+      <div 
+        className={`flex-1 min-h-0 relative transition-all duration-200 ${
+          isFocused('record') ? 'flex-[3] z-10' : ''
+        }`}
+        onMouseEnter={() => handlePanelHover('record')}
+        onMouseLeave={handlePanelLeave}
+        onClick={() => handlePanelClick('record')}
+      >
         <RecordingPanel onInsertContent={(content: string) => insertContentRef.current?.(content)} />
+        {shouldShowTooltip('record') && (
+          <FocusTooltip show={true} isFocused={isFocused('record')} />
+        )}
       </div>
     </div>
   )

@@ -81,6 +81,7 @@ import { ClearEditorActionPlugin } from "@/components/editor/plugins/actions/cle
 import { CounterCharacterPlugin } from "@/components/editor/plugins/actions/counter-character-plugin"
 import { ImportExportPlugin } from "@/components/editor/plugins/actions/import-export-plugin"
 import { SaveFilePlugin } from "@/components/editor/plugins/actions/save-file-plugin"
+import { SaveShortcutPlugin } from "@/components/editor/plugins/actions/save-shortcut-plugin"
 import { UnsavedChangesPlugin } from "@/components/editor/plugins/actions/unsaved-changes-plugin"
 import { CodeHighlightPlugin } from "@/components/editor/plugins/code-highlight-plugin"
 import { CodeActionMenuPlugin } from "@/components/editor/plugins/code-action-menu-plugin"
@@ -637,6 +638,13 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
           currentFileId={currentDraftFileId ?? null}
           onUnsavedChangesChange={onUnsavedChangesWarning}
           onManualSave={handleManualSave}
+        />
+        
+        {/* Save Shortcut Plugin (Ctrl+Alt+S) */}
+        <SaveShortcutPlugin
+          onFileSaved={onFileSaved}
+          currentDraftFileId={currentDraftFileId}
+          onCurrentFileChange={onCurrentFileChange}
         />
       </div>
       
