@@ -363,7 +363,7 @@ Format the output as clean markdown that captures the essence of the lecture.`
         <CardTitle className="text-lg font-black text-black flex items-center justify-between">
           <span className="flex items-center gap-2">
             <Star8 size={20} color="#000" />
-            RECORD LECTURE
+            RECORD
           </span>
           {hasRecording && (
             <button
@@ -487,25 +487,28 @@ Format the output as clean markdown that captures the essence of the lecture.`
                 <Button 
                   onClick={convertToNotes} 
                   disabled={isConverting}
-                  className="flex-1 text-sm border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-purple-400 hover:bg-purple-500 disabled:bg-gray-300 disabled:cursor-not-allowed text-black font-black py-2 h-10"
+                  className="flex-1 text-xs sm:text-sm border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-purple-400 hover:bg-purple-500 disabled:bg-gray-300 disabled:cursor-not-allowed text-black font-black py-2 h-9 sm:h-10 min-w-0"
                   variant="default"
+                  aria-label={isConverting ? 'Converting' : 'Convert to notes'}
                 >
                   {isConverting ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      CONVERTING...
+                      <Loader2 className="w-4 h-4 mr-0 sm:mr-2 animate-spin" />
+                      <span className="hidden sm:inline">CONVERTING...</span>
                     </>
                   ) : (
                     <>
-                      <FileText className="w-4 h-4 mr-2" />
-                      CONVERT TO NOTES
+                      <FileText className="w-4 h-4 mr-0 sm:mr-2" />
+                      <span className="sm:hidden">NOTES</span>
+                      <span className="hidden sm:inline">CONVERT TO NOTES</span>
                     </>
                   )}
                 </Button>
                 <Button 
                   onClick={downloadRecording} 
-                  className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-yellow-400 hover:bg-yellow-500 text-black font-black py-2 px-4 h-10"
+                  className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-yellow-400 hover:bg-yellow-500 text-black font-black py-2 px-4 h-9 sm:h-10 flex-shrink-0"
                   variant="neutral"
+                  aria-label="Download recording"
                 >
                   <Download className="w-4 h-4" />
                 </Button>
