@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Mic, Square, Download, FileText, Circle, RotateCcw, Loader2, Upload } from "lucide-react"
 import Star8 from "@/components/stars/s8"
+import { BrutalAudioLevelMeter } from "@/components/ui/brutal-audio-level-meter"
 import { geminiModel, blobToGenerativePart, normalizeAudioMimeType } from "@/lib/firebase"
 import { FirebaseError } from "firebase/app"
 
@@ -17,7 +18,6 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [hasRecording, setHasRecording] = useState(false)
-  const [audioLevels, setAudioLevels] = useState<number[]>(new Array(20).fill(0))
   const [isConverting, setIsConverting] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [generatedNotes, setGeneratedNotes] = useState<string | null>(null)
@@ -40,33 +40,6 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
       }
     }
   }, [audioUrl])
-
-  // Audio level visualization
-  const updateAudioLevels = useCallback(() => {
-    if (!analyserRef.current) return
-
-    const bufferLength = analyserRef.current.frequencyBinCount
-    const dataArray = new Uint8Array(bufferLength)
-    analyserRef.current.getByteFrequencyData(dataArray)
-
-    // Create a simplified visualization with 20 bars
-    const newLevels = []
-    const groupSize = Math.floor(bufferLength / 20)
-    
-    for (let i = 0; i < 20; i++) {
-      let sum = 0
-      for (let j = 0; j < groupSize; j++) {
-        sum += dataArray[i * groupSize + j]
-      }
-      newLevels.push((sum / groupSize) / 255 * 100)
-    }
-    
-    setAudioLevels(newLevels)
-    // Continue the animation loop only if we're still recording
-    if (mediaRecorderRef.current?.state === 'recording') {
-      animationRef.current = requestAnimationFrame(updateAudioLevels)
-    }
-  }, [])
 
   const startRecording = async () => {
     try {
@@ -129,7 +102,6 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
       mediaRecorder.start()
       setIsRecording(true)
       setRecordingTime(0)
-      setAudioLevels(new Array(20).fill(0))
       
       // Start timer
       intervalRef.current = setInterval(() => {
@@ -141,9 +113,6 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
           return prev + 1
         })
       }, 1000)
-      
-      // Start audio visualization
-      updateAudioLevels()
       
     } catch (error) {
       console.error('Error starting recording:', error)
@@ -167,8 +136,6 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
       cancelAnimationFrame(animationRef.current)
       animationRef.current = null
     }
-    
-    setAudioLevels(new Array(20).fill(0))
   }
 
   const downloadRecording = () => {
@@ -403,18 +370,11 @@ Format the output as clean markdown that captures the essence of the lecture.`
         {/* Audio Visualization */}
         {isRecording && (
           <div className="mx-2">
-            <div className="flex items-end justify-center gap-1 h-8 px-2 border-2 border-black bg-gray-100">
-              {audioLevels.map((level, index) => (
-                <div
-                  key={index}
-                  className="bg-purple-500 w-1 border border-black transition-all duration-75 ease-out"
-                  style={{
-                    height: `${Math.max(3, level * 0.4)}px`,
-                    opacity: level > 0 ? 1 : 0.3
-                  }}
-                />
-              ))}
-            </div>
+            <BrutalAudioLevelMeter 
+              isActive={isRecording}
+              analyser={analyserRef.current}
+              className=""
+            />
           </div>
         )}
 
