@@ -78,6 +78,7 @@ import { InsertTable } from "@/components/editor/plugins/toolbar/block-insert/in
 import { InsertPageBreak } from "@/components/editor/plugins/toolbar/block-insert/insert-page-break"
 import { ActionsPlugin } from "@/components/editor/plugins/actions/actions-plugin"
 import { ClearEditorActionPlugin } from "@/components/editor/plugins/actions/clear-editor-plugin"
+import { ShareNotePlugin } from "@/components/editor/plugins/actions/share-note-plugin"
 import { CounterCharacterPlugin } from "@/components/editor/plugins/actions/counter-character-plugin"
 import { ImportExportPlugin } from "@/components/editor/plugins/actions/import-export-plugin"
 import { SaveFilePlugin } from "@/components/editor/plugins/actions/save-file-plugin"
@@ -150,9 +151,10 @@ interface BrutalEditorProps {
   currentFileId?: number | null
   onInsertContent?: (insertFunction: (content: string) => void) => void
   onReplaceContent?: (replaceFunction: ((content: string) => void) | null) => void
+  onLoadSharedMarkdown?: (loadFunction: ((markdown: string) => void) | null) => void
 }
 
-export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning, onCurrentFileChange, currentFileId, onInsertContent, onReplaceContent }: BrutalEditorProps = {}) {
+export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning, onCurrentFileChange, currentFileId, onInsertContent, onReplaceContent, onLoadSharedMarkdown }: BrutalEditorProps = {}) {
   const notesHook = useNotes()
   const { notes, createNote: createNoteHook, updateNote: updateNoteHook, getNoteById } = notesHook
   const [editorState, setEditorState] = useState<SerializedEditorState>(initialValue)
@@ -284,6 +286,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
               replaceEditorContentRef={replaceEditorContentRef}
               onInsertContent={onInsertContent}
               onReplaceContent={onReplaceContent}
+              onLoadSharedMarkdown={onLoadSharedMarkdown}
               getOrCreateTempFolder={getOrCreateTempFolder}
               createNote={createNote}
               updateNote={updateNote}
@@ -316,7 +319,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
 
 const placeholder = `Start writing here...`
 
-function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, replaceEditorContentRef, onInsertContent, onReplaceContent, getOrCreateTempFolder, createNote, updateNote }: { 
+function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, replaceEditorContentRef, onInsertContent, onReplaceContent, onLoadSharedMarkdown, getOrCreateTempFolder, createNote, updateNote }: { 
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   currentDraftFileId?: number | null
@@ -337,6 +340,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
   replaceEditorContentRef?: React.MutableRefObject<((text: string) => void) | null>
   onInsertContent?: (insertFunction: (content: string) => void) => void
   onReplaceContent?: (replaceFunction: ((content: string) => void) | null) => void
+  onLoadSharedMarkdown?: (loadFunction: ((markdown: string) => void) | null) => void
   getOrCreateTempFolder?: () => Promise<number | undefined>
   createNote?: (title: string, content: string, path: string, isFolder?: boolean, parentId?: number) => Promise<{ id?: number } | null>
   updateNote?: (id: number, updates: { content?: string; updatedAt?: Date }) => Promise<boolean>
@@ -479,6 +483,35 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
       onInsertContent(insertContent)
     }
   }, [editor, onInsertContent])
+  
+  // Set up the shared markdown loading function (specifically for shared content)
+  useEffect(() => {
+    if (onLoadSharedMarkdown) {
+      const loadSharedMarkdown = (markdown: string) => {
+        editor.update(() => {
+          const root = $getRoot()
+          root.clear()
+
+          // Force markdown parsing since we know this is markdown content from sharing
+          try {
+            $convertFromMarkdownString(markdown, TRANSFORMERS)
+          } catch (error) {
+            console.warn("Failed to parse shared markdown, inserting as plain text:", error)
+            // Fallback to plain text
+            const paragraph = $createParagraphNode()
+            const textNode = $createTextNode(markdown)
+            paragraph.append(textNode)
+            root.append(paragraph)
+          }
+        })
+      }
+      onLoadSharedMarkdown(loadSharedMarkdown)
+    }
+
+    return () => {
+      onLoadSharedMarkdown?.(null)
+    }
+  }, [editor, onLoadSharedMarkdown])
   
   // Auto-focus the editor on mount
   useEffect(() => {
@@ -662,7 +695,8 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
                  <div className="flex justify-center">
                    <CounterCharacterPlugin charset="UTF-16" />
                  </div>
-                 <div className="flex flex-1 justify-end">
+                 <div className="flex flex-1 justify-end gap-2">
+                   <ShareNotePlugin />
                    <ClearEditorActionPlugin />
                  </div>
                </div>

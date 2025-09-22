@@ -276,3 +276,15 @@ audio::-webkit-media-controls {
 .animate-pulse-brutal {
   animation: pulse-brutal 2s ease-in-out infinite;
 }
+
+/* Share toast animations */
+@keyframes fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}

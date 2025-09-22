@@ -12,6 +12,7 @@ import { BrutalEditor } from "./BrutalEditor"
 import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-changes-dialog"
 import { useNotes } from "@/hooks"
 import { usePanelFocus } from "@/hooks/usePanelFocus"
+import { decodeContent } from "@/lib/share-utils"
 import { Menu, LogOut, Wifi, WifiOff } from "lucide-react"
 import Star24 from "@/components/stars/s24"
 import { useAuth } from "@/contexts/AuthContext"
@@ -38,6 +39,7 @@ export function MainLayout() {
   // Editor content insertion/ref replacement helpers
   const insertContentRef = useRef<((content: string) => void) | null>(null)
   const replaceContentRef = useRef<((content: string) => void) | null>(null)
+  const loadSharedMarkdownRef = useRef<((markdown: string) => void) | null>(null)
   
   // Unsaved changes management
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -57,6 +59,65 @@ export function MainLayout() {
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  // Handle shared URLs with encoded content
+  useEffect(() => {
+    const handleSharedContent = () => {
+      const hash = window.location.hash
+      if (hash.startsWith('#doc=')) {
+        const encodedContent = hash.substring(5) // Remove '#doc=' prefix
+        const decodedContent = decodeContent(encodedContent)
+        
+        if (decodedContent) {
+          // Set the decoded markdown content for the editor
+          // Use the dedicated shared markdown loader which forces markdown parsing
+          if (loadSharedMarkdownRef.current) {
+            loadSharedMarkdownRef.current(decodedContent)
+          }
+          // Clear the hash to clean up the URL
+          window.history.replaceState(null, '', window.location.pathname)
+          
+          // Show a toast to indicate shared content was loaded
+          const toast = document.createElement('div')
+          toast.className = `
+            fixed top-4 right-4 z-50 max-w-sm w-full
+            bg-blue-500/80 backdrop-blur-sm text-white
+            px-4 py-3 rounded-lg shadow-lg
+            border border-blue-300/20
+            font-mono text-sm font-bold
+            animate-in slide-in-from-top-2 duration-300
+          `
+          toast.innerHTML = `
+            <div class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-blue-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span>Shared note loaded</span>
+            </div>
+          `
+          
+          document.body.appendChild(toast)
+          
+          setTimeout(() => {
+            toast.style.animation = 'fade-out 300ms ease-out forwards'
+            setTimeout(() => {
+              document.body.removeChild(toast)
+            }, 300)
+          }, 3000)
+        }
+      }
+    }
+
+    // Handle on mount
+    handleSharedContent()
+    
+    // Handle hash changes (if user navigates to shared URL while app is open)
+    window.addEventListener('hashchange', handleSharedContent)
+    
+    return () => {
+      window.removeEventListener('hashchange', handleSharedContent)
     }
   }, [])
 
@@ -387,7 +448,6 @@ export function MainLayout() {
                             size="sm"
                           >
                             <LogOut className="h-4 w-4" />
-                            <span className="hidden md:inline ml-2">Logout</span>
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="bottom" avoidCollisions={false} sideOffset={4}>
@@ -409,6 +469,7 @@ export function MainLayout() {
                            currentFileId={currentFileId}
                            onInsertContent={(insertFn) => { insertContentRef.current = insertFn }}
                            onReplaceContent={(replaceFn) => { replaceContentRef.current = replaceFn ?? null }}
+                           onLoadSharedMarkdown={(loadMarkdownFn) => { loadSharedMarkdownRef.current = loadMarkdownFn ?? null }}
                          />
                        </div>
               </CardContent>
