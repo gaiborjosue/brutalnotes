@@ -60,6 +60,9 @@ import { FontSizeToolbarPlugin } from "@/components/editor/plugins/toolbar/font-
 import { CodeLanguageToolbarPlugin } from "@/components/editor/plugins/toolbar/code-language-toolbar-plugin"
 import { AssistancePlugin } from "@/components/editor/plugins/toolbar/assistance-plugin"
 import { ProofreadingPanel } from "@/components/editor/plugins/toolbar/ProofreadingPanel"
+import { AIDetectionPanel } from "@/components/editor/ai-detection-panel"
+
+import type { AIDetectionResponse } from "@/lib/ai-detection-service"
 import { BlockFormatDropDown } from "@/components/editor/plugins/toolbar/block-format-toolbar-plugin"
 import { FormatBulletedList } from "@/components/editor/plugins/toolbar/block-format/format-bulleted-list"
 import { FormatCheckList } from "@/components/editor/plugins/toolbar/block-format/format-check-list"
@@ -209,6 +212,10 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
     }[]
   } | null>(null)
   
+  // AI Detection panel state
+  const [aiDetectionData, setAIDetectionData] = useState<AIDetectionResponse | null>(null)
+
+  
   // Ref to store the editor replacement function
   const replaceEditorContentRef = useRef<((text: string) => void) | null>(null)
 
@@ -263,6 +270,15 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
     setProofreadingData(null)
   }, [])
 
+  // AI Detection handlers
+  const handleAIDetectionResult = useCallback((result: AIDetectionResponse | null) => {
+    setAIDetectionData(result)
+  }, [])
+
+  const handleAIDetectionClose = useCallback(() => {
+    setAIDetectionData(null)
+  }, [])
+
     return (
       <div className="bg-white h-full flex flex-col overflow-hidden border-t-4 border-black">
         <LexicalComposer
@@ -282,6 +298,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
               onUnsavedChangesWarning={onUnsavedChangesWarning}
               currentFileName={currentFileName}
               onProofreadingResult={setProofreadingData}
+              onAIDetectionResult={handleAIDetectionResult}
               replaceEditorContentRef={replaceEditorContentRef}
               onInsertContent={onInsertContent}
               onReplaceContent={onReplaceContent}
@@ -310,6 +327,13 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
               />
             </div>
           )}
+
+          {/* AI Detection Panel - shown as side panel when active */}
+          <AIDetectionPanel
+            result={aiDetectionData}
+            isVisible={!!aiDetectionData}
+            onClose={handleAIDetectionClose}
+          />
           </TooltipProvider>
         </LexicalComposer>
       </div>
@@ -318,7 +342,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
 
 const placeholder = `Start writing here...`
 
-function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, replaceEditorContentRef, onInsertContent, onReplaceContent, onLoadSharedMarkdown, getOrCreateTempFolder, createNote, updateNote }: { 
+function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, onAIDetectionResult, replaceEditorContentRef, onInsertContent, onReplaceContent, onLoadSharedMarkdown, getOrCreateTempFolder, createNote, updateNote }: { 
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   currentDraftFileId?: number | null
@@ -336,6 +360,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
       explanation?: string
     }[]
   } | null) => void
+  onAIDetectionResult?: (result: AIDetectionResponse | null) => void
   replaceEditorContentRef?: React.MutableRefObject<((text: string) => void) | null>
   onInsertContent?: (insertFunction: (content: string) => void) => void
   onReplaceContent?: (replaceFunction: ((content: string) => void) | null) => void
@@ -592,7 +617,10 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
             <FontColorToolbarPlugin />
             <FontBackgroundToolbarPlugin />
             <div className="w-px h-6 bg-black mx-1" />
-            <AssistancePlugin onProofreadingResult={onProofreadingResult} />
+            <AssistancePlugin 
+              onProofreadingResult={onProofreadingResult}
+              onAIDetectionResult={onAIDetectionResult}
+            />
           </div>
         )}
       </ToolbarPlugin>
@@ -620,6 +648,8 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
         {/* Code Plugins */}
         <CodeHighlightPlugin />
         <CodeActionMenuPlugin anchorElem={contentEditableRef.current} />
+        
+
         
         {/* Core plugins */}
         <HistoryPlugin />
