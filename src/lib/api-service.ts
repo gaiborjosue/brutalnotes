@@ -96,6 +96,20 @@ class ApiService {
       }
     }
   }
+
+  // --- Citations ---
+  static async createCitationFromUrl(params: { url: string; style: 'apa' | 'mla'; include_raw?: boolean }): Promise<ApiResult<{ success: boolean; style: 'apa' | 'mla'; citation: string }>> {
+    return this.makeRequest<{ success: boolean; style: 'apa' | 'mla'; citation: string }>(
+      `/citations/from-url`,
+      'POST',
+      {
+        url: params.url,
+        style: params.style,
+        include_raw: params.include_raw ?? false,
+      },
+      20000
+    )
+  }
 }
 
 export default ApiService

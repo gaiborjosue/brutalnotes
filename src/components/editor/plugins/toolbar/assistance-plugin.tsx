@@ -15,6 +15,13 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger } from "@
 import Star28 from "@/components/stars/s28"
 import { proofreadMarkdown, type ProofreaderAPI } from "@/lib/markdown-proofreader"
 import { showProcessingToast } from "@/lib/share-utils"
+import ApiService from "@/lib/api-service"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
+import { Select as StyleSelect, SelectContent as StyleSelectContent, SelectItem as StyleSelectItem, SelectTrigger as StyleSelectTrigger, SelectValue as StyleSelectValue } from "@/components/ui/select"
+import { Copy, Check } from "lucide-react"
 
 // Assistance dropdown that groups Summarize and Proofread actions
 export function AssistancePlugin({ onProofreadingResult }: { onProofreadingResult?: (data: {
@@ -30,11 +37,13 @@ export function AssistancePlugin({ onProofreadingResult }: { onProofreadingResul
 } | null) => void }) {
   const summarize = useSummarizeAction()
   const { handleProofread, proofreaderSupported, busy: proofreaderBusy } = useProofreadAction(onProofreadingResult)
+  const cite = useCiteAction()
 
   // Disable select interaction while any action is busy
-  const isDisabled = summarize.busy || proofreaderBusy
+  const isDisabled = summarize.busy || proofreaderBusy || cite.busy
 
   return (
+    <>
     <Select value={""} disabled={isDisabled}>
       <SelectTrigger className="!h-8 w-min gap-1">
         <Bot className="size-4" />
@@ -77,9 +86,28 @@ export function AssistancePlugin({ onProofreadingResult }: { onProofreadingResul
               <span>Proofread{proofreaderBusy ? "…" : ""}</span>
             </div>
           </SelectItem>
+          <SelectItem
+            value="cite"
+            disabled={cite.busy}
+            onPointerUp={(e) => {
+              cite.open()
+            }}
+          >
+            <div className="flex items-center gap-1">
+              <Star28
+                className="text-blue-600 dark:text-blue-400"
+                pathClassName="stroke-black dark:stroke-white"
+                size={16}
+                strokeWidth={2}
+              />
+              <span>Cite{cite.busy ? "…" : ""}</span>
+            </div>
+          </SelectItem>
         </SelectGroup>
       </SelectContent>
     </Select>
+    {cite.dialog}
+    </>
   )
 }
 
@@ -370,6 +398,102 @@ function useProofreadAction(onProofreadingResult?: (data: {
     handleProofread,
     proofreaderSupported: supported && !checking,
     busy: busy || downloading || checking,
+  }
+}
+
+// --- Cite action hook ---
+function useCiteAction() {
+  const { activeEditor } = useToolbarContext()
+  const [open, setOpen] = useState(false)
+  const [url, setUrl] = useState("")
+  const [style, setStyle] = useState<'apa' | 'mla'>('apa')
+  const [result, setResult] = useState<string>("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>("")
+  const [copied, setCopied] = useState(false)
+
+  const submit = useCallback(async () => {
+    if (!url.trim()) {
+      setError("Please enter a URL")
+      return
+    }
+    setBusy(true)
+    setError("")
+    setResult("")
+    const res = await ApiService.createCitationFromUrl({ url, style })
+    setBusy(false)
+    if (!res.success || !res.data) {
+      setError(res.error || "Failed to generate citation")
+      return
+    }
+    setResult(res.data.citation)
+  }, [url, style])
+
+  const copyToClipboard = useCallback(async () => {
+    if (!result) return
+    try {
+      await navigator.clipboard.writeText(result)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (e) {
+      console.warn('Failed to copy to clipboard', e)
+    }
+  }, [result])
+
+  const insertIntoEditor = useCallback(() => {
+    if (!result) return
+    activeEditor.update(() => {
+      const root = $getRoot()
+      const p = $createParagraphNode()
+      p.append($createTextNode(result))
+      root.append(p)
+    })
+    setOpen(false)
+  }, [result, activeEditor])
+
+  const dialog = (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Cite</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid gap-1">
+            <Label htmlFor="cite-url">URL</Label>
+            <Input id="cite-url" placeholder="https://example.com/article" value={url} onChange={(e) => setUrl(e.target.value)} />
+          </div>
+          <div className="grid gap-1">
+            <Label>Style</Label>
+            <StyleSelect value={style} onValueChange={(v) => setStyle(v as 'apa' | 'mla')}>
+              <StyleSelectTrigger className="w-40"><StyleSelectValue placeholder="Style" /></StyleSelectTrigger>
+              <StyleSelectContent>
+                <StyleSelectItem value="apa">APA</StyleSelectItem>
+                <StyleSelectItem value="mla">MLA</StyleSelectItem>
+              </StyleSelectContent>
+            </StyleSelect>
+          </div>
+          <div className="text-red-600 text-xs min-h-4">{error}</div>
+          <div className="grid gap-1">
+            <Label>Result</Label>
+            <div className="p-2 border-2 border-black bg-white font-mono text-xs min-h-12 max-h-40 overflow-auto whitespace-pre-wrap">{result || (busy ? "Generating…" : "")}</div>
+          </div>
+        </div>
+        <DialogFooter className="flex gap-2">
+          <Button variant="default" onClick={submit} disabled={busy}>Generate</Button>
+          <Button variant="secondary" onClick={copyToClipboard} disabled={!result}>
+            {copied ? <Check className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
+            {copied ? "Copied!" : "Copy"}
+          </Button>
+          <Button variant="default" onClick={insertIntoEditor} disabled={!result}>Insert</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
+  return {
+    busy,
+    open: () => setOpen(true),
+    dialog,
   }
 }
 
