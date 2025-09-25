@@ -17,6 +17,7 @@ import { Menu, LogOut, Wifi, WifiOff } from "lucide-react"
 import Star24 from "@/components/stars/s24"
 import { useAuth } from "@/contexts/AuthContext"
 import { ScanNotesPopover } from "@/features/scan-notes/ScanNotesPopover"
+import { TourStep, TourProvider } from "@/components/guided-tour"
 
 export function MainLayout() {
   const { user, signOut } = useAuth()
@@ -26,6 +27,7 @@ export function MainLayout() {
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [currentFileId, setCurrentFileId] = useState<number | null>(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [isFreshSignup, setIsFreshSignup] = useState(false)
   
   // Panel focus management for Ctrl+hover/click
   const { 
@@ -61,6 +63,22 @@ export function MainLayout() {
       window.removeEventListener('offline', handleOffline)
     }
   }, [])
+
+  // Check if user is a fresh signup (haven't completed the tour)
+  useEffect(() => {
+    if (user) {
+      const tourCompleted = localStorage.getItem(`brutal-notes-tour-completed-${user.id}`)
+      setIsFreshSignup(!tourCompleted)
+    }
+  }, [user])
+
+  // Handle tour completion
+  const handleTourComplete = useCallback(() => {
+    if (user) {
+      localStorage.setItem(`brutal-notes-tour-completed-${user.id}`, 'true')
+      setIsFreshSignup(false)
+    }
+  }, [user])
 
   // Handle shared URLs with encoded content
   useEffect(() => {
@@ -305,7 +323,15 @@ export function MainLayout() {
         onMouseLeave={handlePanelLeave}
         onClick={() => handlePanelClick('todo')}
       >
-        <TodoPanel />
+        <TourStep
+          id="todo-panel"
+          title="TODO Panel"
+          content="This is your TODO panel where you can manage your tasks and keep track of what needs to be done. Click on it or use Ctrl+hover to expand it."
+          position="right"
+          order={1}
+        >
+          <TodoPanel />
+        </TourStep>
         {shouldShowTooltip('todo') && (
           <FocusTooltip show={true} isFocused={isFocused('todo')} />
         )}
@@ -320,31 +346,39 @@ export function MainLayout() {
         onMouseLeave={handlePanelLeave}
         onClick={() => handlePanelClick('files')}
       >
-        <FileSystemPanel 
-          ref={fileSystemRef} 
-          onFileClick={handleFileClick}
-          onNewFileClick={(createFileAction) => {
-            checkUnsavedChanges(createFileAction, "create a new file")
-          }}
-          beforeFileMove={async (moveAction) => {
-            if (hasUnsavedChanges && unsavedSaveFunction) {
-              setPendingAction(() => {
-                moveAction().catch(error => {
-                  console.error('Failed to move note after resolving unsaved changes:', error)
+        <TourStep
+          id="files-panel"
+          title="Files Panel"
+          content="This is your Files panel where you can manage your notes and documents. Create new files, organize them into folders, and access your existing notes. Click on it or use Ctrl+hover to expand it."
+          position="right"
+          order={2}
+        >
+          <FileSystemPanel 
+            ref={fileSystemRef} 
+            onFileClick={handleFileClick}
+            onNewFileClick={(createFileAction) => {
+              checkUnsavedChanges(createFileAction, "create a new file")
+            }}
+            beforeFileMove={async (moveAction) => {
+              if (hasUnsavedChanges && unsavedSaveFunction) {
+                setPendingAction(() => {
+                  moveAction().catch(error => {
+                    console.error('Failed to move note after resolving unsaved changes:', error)
+                  })
                 })
-              })
-              setActionDescription("move the note to a different folder")
-              setShowUnsavedDialog(true)
-              return false
-            }
+                setActionDescription("move the note to a different folder")
+                setShowUnsavedDialog(true)
+                return false
+              }
 
-            await moveAction()
-            return true
-          }}
-          onFileDeleted={handleFileDeleted}
-          onFolderCleared={handleFolderCleared}
-          currentFileId={currentFileId}
-        />
+              await moveAction()
+              return true
+            }}
+            onFileDeleted={handleFileDeleted}
+            onFolderCleared={handleFolderCleared}
+            currentFileId={currentFileId}
+          />
+        </TourStep>
         {shouldShowTooltip('files') && (
           <FocusTooltip show={true} isFocused={isFocused('files')} />
         )}
@@ -359,7 +393,15 @@ export function MainLayout() {
         onMouseLeave={handlePanelLeave}
         onClick={() => handlePanelClick('record')}
       >
-        <RecordingPanel onInsertContent={(content: string) => insertContentRef.current?.(content)} />
+        <TourStep
+          id="record-panel"
+          title="Recording Panel"
+          content="This is your Recording panel where you can record audio notes and convert them to text. Great for capturing ideas on the go! Click on it or use Ctrl+hover to expand it."
+          position="right"
+          order={3}
+        >
+          <RecordingPanel onInsertContent={(content: string) => insertContentRef.current?.(content)} />
+        </TourStep>
         {shouldShowTooltip('record') && (
           <FocusTooltip show={true} isFocused={isFocused('record')} />
         )}
@@ -368,125 +410,148 @@ export function MainLayout() {
   )
 
   return (
-    <div className="min-h-[100dvh] bg-neutral-50 font-mono">
-      <div className="w-full h-[100dvh] p-2">
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-2 h-full">
-          {/* Desktop Sidebar - Hidden on tablet/mobile */}
-          <div className="hidden lg:block lg:col-span-1 min-h-0 overflow-visible">
-            {renderSidebarPanels()}
-          </div>
+    <TourProvider
+      autoStart={isFreshSignup}
+      shouldStart={isFreshSignup}
+      onTourComplete={handleTourComplete}
+      storageKey={`brutal-notes-tour-completed-${user?.id}`}
+    >
+      <div className="min-h-[100dvh] bg-neutral-50 font-mono">
+        <div className="w-full h-[100dvh] p-2">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-2 h-full">
+            {/* Desktop Sidebar - Hidden on tablet/mobile */}
+            <div className="hidden lg:block lg:col-span-1 min-h-0 overflow-visible">
+              {renderSidebarPanels()}
+            </div>
 
-          {/* Main Editor Panel */}
-          <div className="col-span-1 lg:col-span-4 min-h-0">
-            <Card className="h-full min-h-0 border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white">
-              <CardHeader className="border-b-4 border-black bg-neutral-100">
-                <CardTitle className="text-2xl font-black text-black flex items-center justify-between w-full">
-                  <div className="flex items-center gap-3">
-                    {/* Mobile Hamburger Menu */}
-                    <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-                      <SheetTrigger asChild>
-                        <Button 
-                          size="sm" 
-                          className="lg:hidden h-8 px-3 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-blue-400 hover:bg-blue-500 text-black font-black"
-                        >
-                          <Menu className="h-4 w-4" />
-                        </Button>
-                      </SheetTrigger>
-                      <SheetContent 
-                        side="left" 
-                        className="w-[min(90vw,22rem)] border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white p-4"
-                      >
-                        <VisuallyHidden>
-                          <SheetTitle>Navigation Menu</SheetTitle>
-                        </VisuallyHidden>
-                        <div className="h-full pt-4">
-                          {renderSidebarPanels()}
-                        </div>
-                      </SheetContent>
-                    </Sheet>
-                    
-                    <Star24 size={32} color="#000" />
-                    BRUTAL NOTE
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {/* Connectivity Status - subtle and contextual */}
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="flex items-center">
-                            {isOnline ? (
-                              <Wifi size={16} className="text-green-600 mr-2" />
-                            ) : (
-                              <WifiOff size={16} className="text-red-600 mr-2" />
-                            )}
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p className="font-mono font-black">
-                            {isOnline ? 'ONLINE' : 'OFFLINE'}
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-
-                    {/* User Info */}
-                    <div className="hidden sm:block text-sm font-bold text-gray-700 mr-2">
-                      {user?.email}
-                    </div>
-                    
-                    <TooltipProvider>
-                      <ScanNotesPopover onCreateNote={handleScannedNotesGenerated} />
-                    </TooltipProvider>
-
-                    {/* Logout Button */}
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            onClick={() => signOut()}
-                            className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-red-400 hover:bg-red-500 text-black font-black brutal-hover h-8 px-4"
-                            size="sm"
+            {/* Main Editor Panel */}
+            <div className="col-span-1 lg:col-span-4 min-h-0">
+              <TourStep
+                id="main-editor"
+                title="Main Editor"
+                content="This is your main editor where the magic happens! Write, format, and organize your notes with our powerful rich text editor. It supports markdown, code blocks, and much more."
+                position="left"
+                order={5}
+              >
+                <Card className="h-full min-h-0 border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white">
+                  <CardHeader className="border-b-4 border-black bg-neutral-100">
+                    <CardTitle className="text-2xl font-black text-black flex items-center justify-between w-full">
+                      <div className="flex items-center gap-3">
+                        {/* Mobile Hamburger Menu */}
+                        <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+                          <SheetTrigger asChild>
+                            <Button 
+                              size="sm" 
+                              className="lg:hidden h-8 px-3 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-blue-400 hover:bg-blue-500 text-black font-black"
+                            >
+                              <Menu className="h-4 w-4" />
+                            </Button>
+                          </SheetTrigger>
+                          <SheetContent 
+                            side="left" 
+                            className="w-[min(90vw,22rem)] border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white p-4"
                           >
-                            <LogOut className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" avoidCollisions={false} sideOffset={4}>
-                          <p className="font-mono font-black">SIGN OUT</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 h-[calc(100%-4rem)] relative overflow-hidden min-h-0">
-                       {/* Rich Text Editor */}
-                       <div className="h-full max-h-full overflow-hidden">
-                         <BrutalEditor 
-                           onFileSaved={handleFileSaved} 
-                           onLoadFile={handleLoadFile}
-                           onUnsavedChangesWarning={handleUnsavedChangesWarning}
-                           onCurrentFileChange={handleCurrentFileChange}
-                           currentFileId={currentFileId}
-                           onInsertContent={(insertFn) => { insertContentRef.current = insertFn }}
-                           onReplaceContent={(replaceFn) => { replaceContentRef.current = replaceFn ?? null }}
-                           onLoadSharedMarkdown={(loadMarkdownFn) => { loadSharedMarkdownRef.current = loadMarkdownFn ?? null }}
-                         />
-                       </div>
-              </CardContent>
-            </Card>
+                            <VisuallyHidden>
+                              <SheetTitle>Navigation Menu</SheetTitle>
+                            </VisuallyHidden>
+                            <div className="h-full pt-4">
+                              {renderSidebarPanels()}
+                            </div>
+                          </SheetContent>
+                        </Sheet>
+                        
+                        <Star24 size={32} color="#000" />
+                        BRUTAL NOTE
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {/* Connectivity Status - subtle and contextual */}
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center">
+                                {isOnline ? (
+                                  <Wifi size={16} className="text-green-600 mr-2" />
+                                ) : (
+                                  <WifiOff size={16} className="text-red-600 mr-2" />
+                                )}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="font-mono font-black">
+                                {isOnline ? 'ONLINE' : 'OFFLINE'}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+
+                        {/* User Info */}
+                        <div className="hidden sm:block text-sm font-bold text-gray-700 mr-2">
+                          {user?.email}
+                        </div>
+                        
+                        <TooltipProvider>
+                          <TourStep
+                            id="scan-notes-button"
+                            title="Scan Notes"
+                            content="Use this button to scan handwritten notes or documents and convert them to digital text. Perfect for digitizing your physical notes!"
+                            position="bottom"
+                            order={4}
+                          >
+                            <ScanNotesPopover onCreateNote={handleScannedNotesGenerated} />
+                          </TourStep>
+                        </TooltipProvider>
+
+                        {/* Logout Button */}
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                onClick={() => signOut()}
+                                className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-red-400 hover:bg-red-500 text-black font-black brutal-hover h-8 px-4"
+                                size="sm"
+                              >
+                                <LogOut className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" avoidCollisions={false} sideOffset={4}>
+                              <p className="font-mono font-black">SIGN OUT</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0 h-[calc(100%-4rem)] relative overflow-hidden min-h-0">
+                           {/* Rich Text Editor */}
+                           <div className="h-full max-h-full overflow-hidden">
+                             <BrutalEditor 
+                               onFileSaved={handleFileSaved} 
+                               onLoadFile={handleLoadFile}
+                               onUnsavedChangesWarning={handleUnsavedChangesWarning}
+                               onCurrentFileChange={handleCurrentFileChange}
+                               currentFileId={currentFileId}
+                               onInsertContent={(insertFn) => { insertContentRef.current = insertFn }}
+                               onReplaceContent={(replaceFn) => { replaceContentRef.current = replaceFn ?? null }}
+                               onLoadSharedMarkdown={(loadMarkdownFn) => { loadSharedMarkdownRef.current = loadMarkdownFn ?? null }}
+                             />
+                           </div>
+                  </CardContent>
+                </Card>
+              </TourStep>
+            </div>
           </div>
         </div>
+        
+        {/* Unsaved Changes Dialog */}
+        <UnsavedChangesDialog
+          isOpen={showUnsavedDialog}
+          onOpenChange={setShowUnsavedDialog}
+          onSave={handleSaveAndContinue}
+          onDiscard={handleDiscardAndContinue}
+          onCancel={handleCancelAction}
+          actionDescription={actionDescription}
+        />
       </div>
-      
-      {/* Unsaved Changes Dialog */}
-      <UnsavedChangesDialog
-        isOpen={showUnsavedDialog}
-        onOpenChange={setShowUnsavedDialog}
-        onSave={handleSaveAndContinue}
-        onDiscard={handleDiscardAndContinue}
-        onCancel={handleCancelAction}
-        actionDescription={actionDescription}
-      />
-    </div>
+    </TourProvider>
   )
 }
