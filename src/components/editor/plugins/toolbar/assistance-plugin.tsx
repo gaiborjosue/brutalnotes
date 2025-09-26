@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Copy, Check } from "lucide-react"
+import { Copy, Check, Sparkles, ArrowLeftToLine } from "lucide-react"
 
 // Assistance dropdown that groups Summarize and Proofread actions
 export function AssistancePlugin({ onProofreadingResult }: { onProofreadingResult?: (data: {
@@ -491,12 +491,18 @@ function useCiteAction() {
           </div>
         </div>
         <DialogFooter className="flex gap-2">
-          <Button variant="default" onClick={submit} disabled={busy}>Generate</Button>
+          <Button variant="default" onClick={submit} disabled={busy}>
+            <Sparkles className="w-4 h-4 mr-1" />
+            Generate
+          </Button>
           <Button variant="neutral" onClick={copyToClipboard} disabled={!result}>
             {copied ? <Check className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
             {copied ? "Copied!" : "Copy"}
           </Button>
-          <Button variant="default" onClick={insertIntoEditor} disabled={!result}>Insert</Button>
+          <Button variant="neutral" onClick={insertIntoEditor} disabled={!result}>
+            <ArrowLeftToLine className="w-4 h-4 mr-1" />
+            Insert
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
