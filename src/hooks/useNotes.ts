@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { IndexedDBService, type LocalNote } from '../services/indexedDBService'
 import { SyncService } from '../services/syncService'
-import { DataSeedingService } from '../services/dataSeedingService'
+import { GlobalSyncCoordinator } from '../services/globalSyncCoordinator'
 import { useOnlineStatus } from './useOnlineStatus'
 import { useAuth } from '../contexts/AuthContext'
 import { buildFileTreeFromNotes } from '../lib/database-service'
@@ -69,12 +69,10 @@ export function useNotes() {
       try {
         setIsInitialLoading(true)
         
-        // Check if initial sync is needed
-        const needsSync = await DataSeedingService.isInitialSyncNeeded()
-        
-        if (needsSync && isOnline) {
-          console.log('useNotes: Performing initial sync...')
-          const seedResult = await DataSeedingService.performInitialSync()
+        // Use global sync coordinator to prevent duplicate initial syncs
+        if (isOnline) {
+          console.log('useNotes: Requesting coordinated initial sync...', { user: user?.id?.substring(0, 8) })
+          const seedResult = await GlobalSyncCoordinator.performInitialSyncOnce()
           if (!seedResult.success) {
             console.error('Initial sync failed:', seedResult.error)
             setError(`Initial sync failed: ${seedResult.error}`)
@@ -93,7 +91,7 @@ export function useNotes() {
     }
 
     initializeData()
-  }, [authLoading, user, isOnline, loadNotes])
+  }, [authLoading, user, isOnline, loadNotes]) // Stable loadNotes reference prevents loops
 
   // Auto-sync when coming back online
   useEffect(() => {
@@ -107,7 +105,7 @@ export function useNotes() {
   const createNote = useCallback(async (
     title: string,
     content: string,
-    path: string,
+    path?: string, // Made optional - will be generated from parent relationships
     isFolder = false,
     parentId?: number
   ): Promise<LocalNote | null> => {
@@ -225,17 +223,20 @@ export function useNotes() {
     }
   }, [])
 
-  // Build file tree from notes (similar to ElectricSQL shapes.ts)
+  // Build file tree from notes (optimized with shallow comparison)
   const fileTree = useMemo((): FileNode[] => {
     try {
-      // Convert LocalNote to Note format for buildFileTreeFromNotes
-      // Filter out notes without IDs first
-      const validNotes = notes.filter(note => note.id !== undefined)
+      // Only rebuild if we have notes with client IDs
+      const validNotes = notes.filter(note => note.clientId)
+      
+      if (validNotes.length === 0) {
+        return [] // Early return for empty state
+      }
       
       const convertedNotes = validNotes.map(note => ({
         id: note.id,
         serverId: note.serverId,
-        clientId: note.id!, // Use local id as clientId for file tree (already filtered for id)
+        clientId: note.clientId!, // Use actual clientId
         title: note.title,
         content: note.content,
         path: note.path,
@@ -245,8 +246,9 @@ export function useNotes() {
         isFolder: note.isFolder,
         parentId: note.parentId,
         serverParentId: note.serverParentId,
-        parentClientId: note.parentId, // Use local parentId
-        deleted: note.deleted
+        parentClientId: note.parentClientId, // Use actual parentClientId
+        deleted: note.deleted,
+        version: note.version || 1
       }))
 
       return buildFileTreeFromNotes(convertedNotes)
@@ -254,7 +256,10 @@ export function useNotes() {
       console.error('Error building file tree:', error)
       return []
     }
-  }, [notes])
+  }, [
+    // Only rebuild when structural changes occur
+    notes.map(n => `${n.clientId}-${n.title}-${n.isFolder}-${n.parentClientId}`).join(',')
+  ])
 
   // Computed properties
   const folders = useMemo(() => 

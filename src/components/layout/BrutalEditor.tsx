@@ -183,7 +183,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
       const newTempFolder = await createNote(
         'temp',
         '',
-        'temp',
+        undefined, // path will be generated automatically
         true // isFolder
       )
       
@@ -411,7 +411,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
       const newNote = await createNote(
         fileName,
         contentJson,
-        `/temp/${fileName}`,
+        undefined, // path will be generated automatically
         false,
         tempFolderId
       )

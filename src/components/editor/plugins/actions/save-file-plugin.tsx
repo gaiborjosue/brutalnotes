@@ -66,7 +66,6 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
 
       // Save the note to temp folder
       const noteTitle = fileName.trim().endsWith('.lexical') ? fileName.trim() : `${fileName.trim()}.lexical`
-      const notePath = `/temp/${noteTitle}`
 
       let result
       let savedNoteId: number | null = currentDraftFileId ?? null
@@ -76,7 +75,7 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
         const success = await updateNote(currentDraftFileId, {
           title: noteTitle,
           content: contentJson,
-          path: notePath,
+          // path removed - will be generated from parent relationships
           updatedAt: new Date()
         })
         result = { success }
@@ -85,7 +84,7 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
         const newNote = await createNote(
           noteTitle,
           contentJson,
-          notePath,
+          undefined, // path will be generated automatically
           false, // isFolder
           tempFolderId
         )
