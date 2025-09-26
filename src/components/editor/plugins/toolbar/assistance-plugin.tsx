@@ -16,11 +16,10 @@ import Star28 from "@/components/stars/s28"
 import { proofreadMarkdown, type ProofreaderAPI } from "@/lib/markdown-proofreader"
 import { showProcessingToast } from "@/lib/share-utils"
 import ApiService from "@/lib/api-service"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Select as StyleSelect, SelectContent as StyleSelectContent, SelectItem as StyleSelectItem, SelectTrigger as StyleSelectTrigger, SelectValue as StyleSelectValue } from "@/components/ui/select"
 import { Copy, Check } from "lucide-react"
 
 // Assistance dropdown that groups Summarize and Proofread actions
@@ -464,13 +463,26 @@ function useCiteAction() {
           </div>
           <div className="grid gap-1">
             <Label>Style</Label>
-            <StyleSelect value={style} onValueChange={(v) => setStyle(v as 'apa' | 'mla')}>
-              <StyleSelectTrigger className="w-40"><StyleSelectValue placeholder="Style" /></StyleSelectTrigger>
-              <StyleSelectContent>
-                <StyleSelectItem value="apa">APA</StyleSelectItem>
-                <StyleSelectItem value="mla">MLA</StyleSelectItem>
-              </StyleSelectContent>
-            </StyleSelect>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={style === 'apa' ? 'default' : 'neutral'}
+                size="sm"
+                onClick={() => setStyle('apa')}
+                className="flex-1"
+              >
+                APA
+              </Button>
+              <Button
+                type="button"
+                variant={style === 'mla' ? 'default' : 'neutral'}
+                size="sm"
+                onClick={() => setStyle('mla')}
+                className="flex-1"
+              >
+                MLA
+              </Button>
+            </div>
           </div>
           <div className="text-red-600 text-xs min-h-4">{error}</div>
           <div className="grid gap-1">
@@ -480,7 +492,7 @@ function useCiteAction() {
         </div>
         <DialogFooter className="flex gap-2">
           <Button variant="default" onClick={submit} disabled={busy}>Generate</Button>
-          <Button variant="secondary" onClick={copyToClipboard} disabled={!result}>
+          <Button variant="neutral" onClick={copyToClipboard} disabled={!result}>
             {copied ? <Check className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
             {copied ? "Copied!" : "Copy"}
           </Button>
