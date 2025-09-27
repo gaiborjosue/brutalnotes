@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
@@ -21,25 +22,33 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Copy, Check, Sparkles, ArrowLeftToLine } from "lucide-react"
+import AIDetectionService, { type AIDetectionResponse } from "@/lib/ai-detection-service"
 
-// Assistance dropdown that groups Summarize and Proofread actions
-export function AssistancePlugin({ onProofreadingResult }: { onProofreadingResult?: (data: {
-  originalText: string
-  correctedText: string
-  corrections?: {
-    startIndex: number
-    endIndex: number
-    suggestion: string
-    type: string
-    explanation?: string
-  }[]
-} | null) => void }) {
+// Assistance dropdown that groups Summarize, Proofread, and Detect AI actions
+export function AssistancePlugin({ 
+  onProofreadingResult,
+  onAIDetectionResult 
+}: { 
+  onProofreadingResult?: (data: {
+    originalText: string
+    correctedText: string
+    corrections?: {
+      startIndex: number
+      endIndex: number
+      suggestion: string
+      type: string
+      explanation?: string
+    }[]
+  } | null) => void
+  onAIDetectionResult?: (result: AIDetectionResponse | null) => void
+}) {
   const summarize = useSummarizeAction()
   const { handleProofread, proofreaderSupported, busy: proofreaderBusy } = useProofreadAction(onProofreadingResult)
   const cite = useCiteAction()
+  const { handleAIDetection, busy: aiDetectionBusy } = useAIDetectionAction(onAIDetectionResult)
 
   // Disable select interaction while any action is busy
-  const isDisabled = summarize.busy || proofreaderBusy || cite.busy
+  const isDisabled = summarize.busy || proofreaderBusy || cite.busy || aiDetectionBusy
 
   return (
     <>
@@ -53,7 +62,7 @@ export function AssistancePlugin({ onProofreadingResult }: { onProofreadingResul
           <SelectItem
             value="summarize"
             disabled={!summarize.supported || summarize.busy}
-            onPointerUp={(e) => {
+            onPointerUp={() => {
               // Radix Select closes on selection; fire after pointer up
               summarize.handle()
             }}
@@ -71,7 +80,7 @@ export function AssistancePlugin({ onProofreadingResult }: { onProofreadingResul
           <SelectItem
             value="proofread"
             disabled={!proofreaderSupported || proofreaderBusy}
-            onPointerUp={(e) => {
+            onPointerUp={() => {
               handleProofread()
             }}
           >
@@ -88,7 +97,7 @@ export function AssistancePlugin({ onProofreadingResult }: { onProofreadingResul
           <SelectItem
             value="cite"
             disabled={cite.busy}
-            onPointerUp={(e) => {
+            onPointerUp={() => {
               cite.open()
             }}
           >
@@ -100,6 +109,18 @@ export function AssistancePlugin({ onProofreadingResult }: { onProofreadingResul
                 strokeWidth={2}
               />
               <span>Cite{cite.busy ? "…" : ""}</span>
+            </div>
+          </SelectItem>
+          <SelectItem
+            value="detect-ai"
+            disabled={aiDetectionBusy}
+            onPointerUp={() => {
+              handleAIDetection()
+            }}
+          >
+            <div className="flex items-center gap-1">
+              <Bot className="size-4 text-blue-500" />
+              <span>Detect AI{aiDetectionBusy ? "…" : ""}</span>
             </div>
           </SelectItem>
         </SelectGroup>
@@ -133,10 +154,6 @@ declare global {
       create: (options?: SummarizerOptions) => Promise<Summarizer>
     }
   }
-  const Summarizer: {
-    availability: () => Promise<'readily' | 'after-download' | 'no'>
-    create: (options?: SummarizerOptions) => Promise<Summarizer>
-  }
 }
 
 function isChromeWithSummarizerAPI(): boolean {
@@ -149,7 +166,7 @@ function useSummarizeAction() {
   const [checking, setChecking] = useState(true)
   const [busy, setBusy] = useState(false)
   const [downloading, setDownloading] = useState(false)
-  const [progress, setProgress] = useState(0)
+  const [, setProgress] = useState(0)
   const [availabilityStatus, setAvailabilityStatus] = useState<'readily' | 'after-download' | 'no' | null>(null)
 
   useEffect(() => {
@@ -213,8 +230,7 @@ function useSummarizeAction() {
       }
 
       const summary = await summarizer.summarize(textContent, {
-        context: 'This is a note or document that needs to be summarized for quick reference.',
-        outputLanguage: 'en'
+        context: 'This is a note or document that needs to be summarized for quick reference.'
       })
 
       activeEditor.update(() => {
@@ -251,10 +267,10 @@ function useSummarizeAction() {
   const label = useMemo(() => {
     if (checking) return "Checking…"
     if (!supported) return "Summarize (unavailable)"
-    if (downloading) return `Downloading… ${progress}%`
+    if (downloading) return "Downloading…"
     if (busy) return "Summarizing…"
     return availabilityStatus === 'after-download' ? "Summarize*" : "Summarize"
-  }, [checking, supported, downloading, progress, busy, availabilityStatus])
+  }, [checking, supported, downloading, busy, availabilityStatus])
 
   return { supported, busy: busy || downloading || checking, handle, label }
 }
@@ -287,10 +303,6 @@ declare global {
       create: (options?: ProofreaderOptions) => Promise<Proofreader>
     }
   }
-  const Proofreader: {
-    availability: () => Promise<'readily' | 'after-download' | 'no'>
-    create: (options?: ProofreaderOptions) => Promise<Proofreader>
-  }
 }
 
 function isChromeWithProofreaderAPI(): boolean {
@@ -313,7 +325,7 @@ function useProofreadAction(onProofreadingResult?: (data: {
   const [checking, setChecking] = useState(true)
   const [busy, setBusy] = useState(false)
   const [downloading, setDownloading] = useState(false)
-  const [progress, setProgress] = useState(0)
+  const [, setProgress] = useState(0)
   const [availabilityStatus, setAvailabilityStatus] = useState<'readily' | 'after-download' | 'no' | null>(null)
 
   useEffect(() => {
@@ -512,6 +524,64 @@ function useCiteAction() {
     busy,
     open: () => setOpen(true),
     dialog,
+  }
+}
+
+// --- AI Detection action hook ---
+function useAIDetectionAction(onAIDetectionResult?: (result: AIDetectionResponse | null) => void) {
+  const { activeEditor } = useToolbarContext()
+  const [busy, setBusy] = useState(false)
+
+  const handleAIDetection = useCallback(async () => {
+    if (busy) return
+    setBusy(true)
+    const dismiss = showProcessingToast("Detecting AI content…")
+    
+    try {
+      const editorState = activeEditor.getEditorState()
+      let textContent = ""
+      
+      editorState.read(() => {
+        const root = $getRoot()
+        textContent = root.getTextContent()
+      })
+
+      if (!textContent.trim()) {
+        alert("No content to analyze")
+        return
+      }
+
+      console.log('Sending text for AI detection (first 200 chars):', textContent.substring(0, 200))
+      
+      const result = await AIDetectionService.detectAI({
+        text: textContent,
+        score_string: false,
+        sentence_scores: true
+      })
+
+      if (result.success && result.data) {
+        console.log('AI detection result:', result.data)
+        if (result.data.sentence_scores && result.data.sentence_scores.length > 0) {
+          console.log('First detected sentence:', result.data.sentence_scores[0])
+        }
+        onAIDetectionResult?.(result.data)
+      } else {
+        alert(`AI Detection failed: ${result.error || 'Unknown error'}`)
+        onAIDetectionResult?.(null)
+      }
+    } catch (error) {
+      console.error("Error during AI detection:", error)
+      alert("Failed to detect AI content. Please try again.")
+      onAIDetectionResult?.(null)
+    } finally {
+      dismiss()
+      setBusy(false)
+    }
+  }, [busy, activeEditor, onAIDetectionResult])
+
+  return {
+    handleAIDetection,
+    busy
   }
 }
 

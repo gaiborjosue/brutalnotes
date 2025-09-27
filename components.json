@@ -20,6 +20,7 @@
   },
   "registries": {
     "@neobrutalism": "https://neobrutalism.dev/r/{name}.json",
-    "@shadcn-editor": "https://shadcn-editor.vercel.app/r/{name}.json"
+    "@shadcn-editor": "https://shadcn-editor.vercel.app/r/{name}.json",
+    "@rigidui": "https://rigidui.com/r/{name}.json"
   }
 }

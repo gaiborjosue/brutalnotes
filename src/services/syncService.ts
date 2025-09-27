@@ -1,4 +1,4 @@
-import { IndexedDBService, type LocalTodo, type LocalNote } from './indexedDBService'
+import { IndexedDBService, type LocalTodo, type LocalNote, db } from './indexedDBService'
 import { TodoService, NoteService } from '../lib/database-service'
 import { supabase } from '../lib/supabase'
 
@@ -17,6 +17,7 @@ export class SyncService {
 
   /**
    * Main sync method - processes all pending changes
+   * OFFLINE-FIRST: Push local changes first, then pull and resolve conflicts
    */
   static async sync(): Promise<SyncResult> {
     if (this.syncInProgress) {
@@ -33,7 +34,7 @@ export class SyncService {
     this.notifyListeners({ type: 'sync_started' })
 
     try {
-      console.log('SyncService: Starting sync process...')
+      console.log('SyncService: Starting OFFLINE-FIRST sync process...')
 
       // Check authentication
       const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -41,11 +42,16 @@ export class SyncService {
         throw new Error('User not authenticated')
       }
 
-      // First, pull changes from server
+      // STEP 1: Push local changes first (preserves user work)
+      console.log('SyncService: STEP 1 - Pushing local changes...')
+      const pushResult = await this.pushChangesToServer()
+
+      // STEP 2: Pull server changes and handle conflicts
+      console.log('SyncService: STEP 2 - Pulling server changes...')
       await this.pullChangesFromServer()
 
-      // Then, push local changes to server
-      const pushResult = await this.pushChangesToServer()
+      // STEP 3: Record sync results
+      await IndexedDBService.recordSyncResult(pushResult.processed, pushResult.failed)
 
       this.lastSyncTime = new Date()
       this.notifyListeners({ 
@@ -57,13 +63,16 @@ export class SyncService {
         } 
       })
 
-      console.log(`SyncService: Sync completed. Processed: ${pushResult.processed}, Failed: ${pushResult.failed}`)
+      console.log(`SyncService: Offline-first sync completed. Processed: ${pushResult.processed}, Failed: ${pushResult.failed}`)
 
       return pushResult
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown sync error'
       console.error('SyncService: Sync failed:', errorMessage)
+      
+      // Record failed sync
+      await IndexedDBService.recordSyncResult(0, 1)
       
       this.notifyListeners({ 
         type: 'sync_error', 
@@ -152,18 +161,24 @@ export class SyncService {
       if (!localItem) {
         // New item from server - add to local
         await this.addServerItemToLocal(entityType, serverItem)
-      } else if (localItem.syncStatus !== 'pending') {
-        // Item exists locally and is synced - check for updates
-        const serverUpdatedAt = new Date(serverItem.updatedAt as string)
-        const localUpdatedAt = new Date(localItem.updatedAt)
-
-        if (serverUpdatedAt > localUpdatedAt) {
-          // Server is newer - update local
-          await this.updateLocalItemFromServer(entityType, localItem.id!, serverItem)
-        }
       } else {
-        // Item has pending local changes - handle conflict
-        await this.resolveConflict(entityType, localItem, serverItem)
+        // Item exists locally - check for conflicts
+        const hasConflict = this.detectConflict(localItem, serverItem)
+        
+        if (hasConflict) {
+          // Handle conflict using improved resolution
+          await this.resolveConflict(entityType, localItem, serverItem)
+        } else if (localItem.syncStatus !== 'pending') {
+          // Item is synced and no conflict - check for updates
+          const serverUpdatedAt = new Date(serverItem.updatedAt as string)
+          const localUpdatedAt = new Date(localItem.updatedAt)
+
+          if (serverUpdatedAt > localUpdatedAt) {
+            // Server is newer - update local
+            await this.updateLocalItemFromServer(entityType, localItem.id!, serverItem)
+          }
+        }
+        // If local has pending changes but no conflict, let push handle it
       }
     }
 
@@ -202,23 +217,53 @@ export class SyncService {
         }
         await IndexedDBService.bulkUpsertTodos([localTodo])
       } else {
+        // For notes, we need to resolve parent_client_id to local parentId
+        let parentId: number | undefined = undefined
+        
+        if (serverItem.parentClientId) {
+          // Find the local note with matching clientId to get its local ID
+          const parentNote = await IndexedDBService.getNoteByMixedClientId(serverItem.parentClientId as string)
+          if (parentNote && parentNote.id) {
+            parentId = parentNote.id
+            console.log(`SyncService: Resolved parent client ID ${serverItem.parentClientId} to local parent ID ${parentId}`)
+          } else {
+            console.warn(`SyncService: Could not find parent note with client ID ${serverItem.parentClientId}`)
+          }
+        }
+        
         const localNote: LocalNote = {
           serverId: (serverItem.serverId as string) || (serverItem.id as string),
-          clientId: (serverItem.clientId as number) || (serverItem.id as number),
+          clientId: (serverItem.clientId as string) || (serverItem.id as string),
           title: serverItem.title as string,
           content: serverItem.content as string,
           path: serverItem.path as string,
           isFolder: serverItem.isFolder as boolean,
-          parentId: serverItem.parentId as number,
+          parentId: parentId, // Use resolved local parent ID
           serverParentId: serverItem.serverParentId as string,
-          parentClientId: serverItem.parentClientId as number,
+          parentClientId: serverItem.parentClientId as string,
           deleted: (serverItem.deleted as boolean) || false,
+          version: (serverItem.version as number) || 1,
           createdAt: new Date(serverItem.createdAt as string),
           updatedAt: new Date(serverItem.updatedAt as string),
           syncStatus: 'synced',
           needSync: false
         }
-        await IndexedDBService.bulkUpsertNotes([localNote])
+        // Don't use bulkUpsertNotes for single items during individual processing
+        // The bulk upsert handles parent resolution, but here we need immediate resolution
+        const noteId = await db.notes.add({
+          ...localNote,
+          syncStatus: 'synced',
+          needSync: false
+        })
+        
+        // Immediately resolve parent relationship if needed
+        if (localNote.parentClientId) {
+          const parentNote = await IndexedDBService.getNoteByMixedClientId(localNote.parentClientId)
+          if (parentNote && parentNote.id && noteId) {
+            await db.notes.update(noteId, { parentId: parentNote.id })
+            console.log(`🔗 Immediately resolved parent for ${localNote.title}: clientId ${localNote.parentClientId} -> local ID ${parentNote.id}`)
+          }
+        }
       }
     } catch (error) {
       console.error(`SyncService: Error adding server ${entityType} to local:`, error)
@@ -240,19 +285,34 @@ export class SyncService {
           needSync: false
         })
       } else {
+        // For notes, resolve parent_client_id to local parentId
+        let parentId: number | undefined = undefined
+        
+        if (serverItem.parentClientId) {
+          const parentNote = await IndexedDBService.getNoteByMixedClientId(serverItem.parentClientId as string)
+          if (parentNote && parentNote.id) {
+            parentId = parentNote.id
+          }
+        }
+        
         await IndexedDBService.updateNote(localId, {
           title: serverItem.title as string,
           content: serverItem.content as string,
           path: serverItem.path as string,
           isFolder: serverItem.isFolder as boolean,
-          parentId: serverItem.parentId as number,
+          parentId: parentId,
           serverParentId: serverItem.serverParentId as string,
-          parentClientId: serverItem.parentClientId as number,
+          parentClientId: serverItem.parentClientId as string,
           deleted: (serverItem.deleted as boolean) || false,
+          version: (serverItem.version as number) || 1,
           updatedAt: new Date(serverItem.updatedAt as string),
           syncStatus: 'synced',
           needSync: false
         })
+        
+        if (parentId) {
+          console.log(`🔗 Updated parent relationship for ${serverItem.title}: clientId ${serverItem.parentClientId} -> local ID ${parentId}`)
+        }
       }
     } catch (error) {
       console.error(`SyncService: Error updating local ${entityType} from server:`, error)
@@ -260,7 +320,24 @@ export class SyncService {
   }
 
   /**
-   * Resolve conflicts between local and server data
+   * Detect if there's a conflict between local and server versions
+   */
+  private static detectConflict(
+    localItem: LocalTodo | LocalNote,
+    serverItem: Record<string, unknown>
+  ): boolean {
+    const localVersion = localItem.version || 1
+    const serverVersion = (serverItem.version as number) || 1
+    const localHasPendingChanges = localItem.syncStatus === 'pending'
+    
+    // Conflict exists if:
+    // 1. Local has pending changes AND
+    // 2. Server version is different (either newer or we have different changes)
+    return localHasPendingChanges && localVersion !== serverVersion
+  }
+
+  /**
+   * Resolve conflicts between local and server data using improved logic
    */
   private static async resolveConflict(
     entityType: 'todo' | 'note', 
@@ -268,26 +345,40 @@ export class SyncService {
     serverItem: Record<string, unknown>
   ): Promise<void> {
     console.log(`SyncService: Resolving conflict for ${entityType} ${localItem.id}`)
+    
+    const localVersion = localItem.version || 1
+    const serverVersion = (serverItem.version as number) || 1
+    const serverUpdatedAt = new Date(serverItem.updatedAt as string)
+    const localUpdatedAt = new Date(localItem.updatedAt)
 
     switch (this.CONFLICT_RESOLUTION_STRATEGY) {
       case 'last-write-wins': {
-        const serverUpdatedAt = new Date(serverItem.updatedAt as string)
-        const localUpdatedAt = new Date(localItem.updatedAt)
-
-        if (serverUpdatedAt > localUpdatedAt) {
-          // Server wins - update local
+        // Use timestamp as tiebreaker when versions differ
+        const serverWins = serverUpdatedAt > localUpdatedAt
+        
+        if (serverWins) {
+          console.log(`SyncService: Server wins conflict resolution (server: ${serverUpdatedAt.toISOString()}, local: ${localUpdatedAt.toISOString()})`)
+          // Server wins - update local but preserve local ID
           if (localItem.id) {
             await this.updateLocalItemFromServer(entityType, localItem.id, serverItem)
           }
+          
+          // Record conflict
+          await IndexedDBService.updateSyncState({
+            conflictCount: ((await IndexedDBService.getSyncState())?.conflictCount || 0) + 1
+          })
+        } else {
+          console.log(`SyncService: Local wins conflict resolution - will push local changes`)
+          // Local wins - mark as needing sync so push will handle it
+          // Don't overwrite local changes
         }
-        // If local is newer or equal, we'll push local changes to server
         break
       }
 
       case 'manual': {
         // Store conflict for manual resolution
-        // This would require additional UI components
         console.log('Manual conflict resolution not implemented yet')
+        // TODO: Implement conflict storage for manual resolution UI
         break
       }
 
@@ -495,7 +586,7 @@ export class SyncService {
         content: note.content,
         path: note.path,
         isFolder: note.isFolder,
-        parentId: note.parentId
+        parentId: note.parentClientId  // ✅ Pass parentClientId as parentId (confusing naming in API)
       })
       if (result.success) {
         await IndexedDBService.updateNote(note.id, {
@@ -507,21 +598,13 @@ export class SyncService {
         throw new Error(result.error || 'Failed to update note')
       }
     } else {
-      // Create new note - need to resolve parent client ID
-      let parentClientId: number | undefined = undefined
+      // Create new note - use the parentClientId that was set during note creation
+      const parentClientId = note.parentClientId
       
-      if (note.parentId) {
-        // Get parent note from IndexedDB to find its client ID
-        const parentNote = await IndexedDBService.getNoteById(note.parentId)
-        if (parentNote && parentNote.clientId) {
-          parentClientId = parentNote.clientId
-          console.log(`SyncService: Resolved parent ID ${note.parentId} to client ID ${parentClientId}`)
-        } else if (parentNote && !parentNote.clientId) {
-          console.warn(`SyncService: Parent note ${note.parentId} exists but has no clientId (not synced yet). Creating note without parent for now.`)
-          // TODO: We could implement a deferred sync queue for these cases
-        } else {
-          console.warn(`SyncService: Could not find parent note with ID ${note.parentId}`)
-        }
+      if (parentClientId) {
+        console.log(`SyncService: Using parentClientId from note: ${parentClientId}`)
+      } else if (note.parentId) {
+        console.warn(`SyncService: Note has parentId ${note.parentId} but no parentClientId - this indicates a bug in note creation`)
       }
       
       console.log(`SyncService: Creating note on server:`, {

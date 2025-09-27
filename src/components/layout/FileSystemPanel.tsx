@@ -139,11 +139,17 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   }
 
   const deleteFile = async (id: string) => {
-    const noteId = parseInt(id)
+    // Find note by client ID
+    const note = notes.find(note => note.clientId === id)
+    if (!note || !note.id) {
+      console.error('Note to delete not found:', id)
+      return
+    }
+    
     try {
-      await deleteNote(noteId)
+      await deleteNote(note.id)
       // Notify parent that file was deleted
-      onFileDeleted?.(noteId)
+      onFileDeleted?.(note.id)
       // Refresh the file tree
       await refreshFileTree()
     } catch (error) {
@@ -153,11 +159,16 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
 
   const clearNotesFromFolder = async (folderId: string) => {
     try {
-      const folderNoteId = parseInt(folderId)
+      // Find folder by client ID
+      const folderNote = notes.find(note => note.clientId === folderId)
+      if (!folderNote || !folderNote.id) {
+        console.error('Folder to clear not found:', folderId)
+        return
+      }
       
       // Find all notes that are children of this folder (not folders themselves)
       const notesToDelete = notes.filter(note => 
-        note.parentId === folderNoteId && !note.isFolder
+        note.parentId === folderNote.id && !note.isFolder
       )
 
       // Delete each note and collect successfully deleted IDs
@@ -197,24 +208,32 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
 
   const finishRename = async () => {
     if (editingFile && editingName.trim()) {
-      const noteId = parseInt(editingFile)
+      // Find note by client ID
+      const note = notes.find(note => note.clientId === editingFile)
+      if (!note || !note.id) {
+        console.error('Note to rename not found:', editingFile)
+        setEditingFile(null)
+        setEditingName("")
+        return
+      }
       
       // Get the note to check if it's a file or folder
       try {
-        const note = await getNoteById(noteId)
-        if (note && note.isFolder && note.title === 'temp') {
+        // Check if it's the temp folder (can't be renamed)
+        if (note.isFolder && note.title === 'temp') {
           setEditingFile(null)
           setEditingName("")
           return
         }
+        
         let newTitle = editingName.trim()
         
         // If it's a file and doesn't end with .lexical, add it
-        if (note && !note.isFolder && !newTitle.endsWith('.lexical')) {
+        if (!note.isFolder && !newTitle.endsWith('.lexical')) {
           newTitle = `${newTitle}.lexical`
         }
         
-        await updateNote(noteId, { title: newTitle })
+        await updateNote(note.id, { title: newTitle })
         
         // Refresh the file tree
         await refreshFileTree()
@@ -272,7 +291,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         const newTempFolder = await createNote(
           'temp',
           '',
-          'temp',
+          undefined, // path will be generated automatically
           true // isFolder
         )
         
@@ -312,7 +331,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       const newNote = await createNote(
         noteName,
         defaultContent,
-        `temp/${noteName}`,
+        undefined, // path will be generated automatically from parent relationship
         false, // isFolder
         tempFolderId
       )
@@ -370,19 +389,15 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     
     if (draggedItem && targetFolderId) {
       try {
-        const fileId = parseInt(draggedItem)
-        const folderId = parseInt(targetFolderId)
-        
-        const [fileNote, parentNote] = await Promise.all([
-          getNoteById(fileId),
-          getNoteById(folderId)
-        ])
+        // Find notes by client ID since node.id is now client ID string
+        const fileNote = notes.find(note => note.clientId === draggedItem)
+        const parentNote = notes.find(note => note.clientId === targetFolderId)
 
-        if (!fileNote) {
+        if (!fileNote || !fileNote.id) {
           throw new Error('File to move not found')
         }
 
-        if (!parentNote) {
+        if (!parentNote || !parentNote.id) {
           throw new Error('Target folder not found')
         }
 
@@ -400,8 +415,8 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
 
         const performMove = async () => {
           try {
-            await updateNote(fileId, {
-              parentId: folderId,
+            await updateNote(fileNote.id, {
+              parentId: parentNote.id,
               path: newPath
             })
 

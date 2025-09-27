@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { IndexedDBService, type LocalTodo } from '../services/indexedDBService'
 import { SyncService } from '../services/syncService'
-import { DataSeedingService } from '../services/dataSeedingService'
+import { GlobalSyncCoordinator } from '../services/globalSyncCoordinator'
 import { useOnlineStatus } from './useOnlineStatus'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -19,8 +19,9 @@ export function useTodos() {
   const { isOnline, isOnlineAfterOffline } = useOnlineStatus()
   const { user, loading: authLoading } = useAuth()
 
-  // Load todos from IndexedDB
-  const loadTodos = useCallback(async () => {
+  // Load todos from IndexedDB (stable reference)
+  const loadTodosRef = useRef<() => Promise<void>>()
+  loadTodosRef.current = async () => {
     try {
       const localTodos = await IndexedDBService.getAllTodos()
       setTodos(localTodos)
@@ -28,6 +29,12 @@ export function useTodos() {
     } catch (error) {
       console.error('Error loading todos from IndexedDB:', error)
       setError(error instanceof Error ? error.message : 'Failed to load todos')
+    }
+  }
+
+  const loadTodos = useCallback(async () => {
+    if (loadTodosRef.current) {
+      await loadTodosRef.current()
     }
   }, [])
 
@@ -67,12 +74,10 @@ export function useTodos() {
       try {
         setIsInitialLoading(true)
         
-        // Check if initial sync is needed
-        const needsSync = await DataSeedingService.isInitialSyncNeeded()
-        
-        if (needsSync && isOnline) {
-          console.log('useTodos: Performing initial sync...')
-          const seedResult = await DataSeedingService.performInitialSync()
+        // Use global sync coordinator to prevent duplicate initial syncs
+        if (isOnline) {
+          console.log('useTodos: Requesting coordinated initial sync...', { user: user?.id?.substring(0, 8) })
+          const seedResult = await GlobalSyncCoordinator.performInitialSyncOnce()
           if (!seedResult.success) {
             console.error('Initial sync failed:', seedResult.error)
             setError(`Initial sync failed: ${seedResult.error}`)
@@ -91,7 +96,7 @@ export function useTodos() {
     }
 
     initializeData()
-  }, [authLoading, user, isOnline, loadTodos])
+  }, [authLoading, user, isOnline, loadTodos]) // Stable loadTodos reference prevents loops
 
   // Auto-sync when coming back online
   useEffect(() => {

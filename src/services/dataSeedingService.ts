@@ -61,28 +61,70 @@ export class DataSeedingService {
         needSync: false
       }))
 
-      const localNotes: LocalNote[] = supabaseNotes.map(note => ({
-        serverId: note.serverId,
-        clientId: note.clientId || note.id,
-        title: note.title,
-        content: note.content,
-        path: note.path,
-        isFolder: note.isFolder,
-        parentId: note.parentId,
-        serverParentId: note.serverParentId,
-        parentClientId: note.parentClientId,
-        deleted: note.deleted || false,
-        createdAt: note.createdAt,
-        updatedAt: note.updatedAt,
-        syncStatus: 'synced' as const,
-        needSync: false
-      }))
+      // Build a map to resolve parent relationships
+      const clientIdToNoteMap = new Map<string, Note>()
+      supabaseNotes.forEach(note => {
+        if (note.clientId) {
+          clientIdToNoteMap.set(note.clientId, note)
+        }
+      })
 
-      // Bulk insert into IndexedDB
-      await Promise.all([
-        IndexedDBService.bulkUpsertTodos(localTodos),
-        IndexedDBService.bulkUpsertNotes(localNotes)
-      ])
+      const localNotes: LocalNote[] = []
+      const noteIdMap = new Map<string, number>() // Map server clientId to local ID
+
+      // Process notes in two passes to handle parent relationships
+      // First pass: Create all notes without parent relationships
+      for (let i = 0; i < supabaseNotes.length; i++) {
+        const note = supabaseNotes[i]
+        const localNote: LocalNote = {
+          serverId: note.serverId,
+          clientId: note.clientId || note.id,
+          title: note.title,
+          content: note.content,
+          path: note.path,
+          isFolder: note.isFolder,
+          parentId: undefined, // Will be resolved in second pass
+          serverParentId: note.serverParentId,
+          parentClientId: note.parentClientId,
+          deleted: note.deleted || false,
+          version: note.version || 1,
+          createdAt: note.createdAt,
+          updatedAt: note.updatedAt,
+          syncStatus: 'synced' as const,
+          needSync: false
+        }
+        localNotes.push(localNote)
+        
+        // Store mapping for second pass (assuming bulk insert maintains order)
+        if (note.clientId) {
+          noteIdMap.set(note.clientId, i + 1) // Dexie auto-increment starts at 1
+        }
+      }
+
+      // Bulk insert notes first
+      await IndexedDBService.bulkUpsertNotes(localNotes)
+
+      // Second pass: Update parent relationships
+      for (let i = 0; i < localNotes.length; i++) {
+        const localNote = localNotes[i]
+        const originalNote = supabaseNotes[i]
+        
+        if (originalNote.parentClientId) {
+          const parentLocalId = noteIdMap.get(originalNote.parentClientId)
+          if (parentLocalId) {
+            // Update the note with correct parent relationship
+            const noteWithParent = await IndexedDBService.getNoteByClientId(localNote.clientId!)
+            if (noteWithParent && noteWithParent.id) {
+              await IndexedDBService.updateNote(noteWithParent.id, {
+                parentId: parentLocalId
+              })
+            }
+          }
+        }
+      }
+
+      // Bulk insert todos
+      await IndexedDBService.bulkUpsertTodos(localTodos)
 
       console.log(`DataSeedingService: Initial sync completed successfully. Synced ${localTodos.length} todos and ${localNotes.length} notes.`)
 

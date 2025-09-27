@@ -5,28 +5,30 @@ const SYNCED_STATUS: Todo['syncStatus'] = 'synced'
 
 export interface TodoRow extends Record<string, unknown> {
   id: string
-  client_id: number | null
+  client_id: string | null
   text: string
   completed: boolean
+  version: number
   created_at: string
   updated_at: string
-  deleted_at: string | null
   _deleted: boolean
+  _modified: string
 }
 
 export interface NoteRow extends Record<string, unknown> {
   id: string
-  client_id: number | null
+  client_id: string | null
   title: string
   content: string
   path: string
   is_folder: boolean
   parent_id: string | null
-  parent_client_id: number | null
+  parent_client_id: string | null
+  version: number
   created_at: string
   updated_at: string
-  deleted_at: string | null
   _deleted: boolean
+  _modified: string
 }
 
 async function requireUser() {
@@ -57,6 +59,7 @@ export function mapTodoRow(row: TodoRow): Todo {
     text: row.text,
     completed: row.completed,
     deleted: Boolean(row._deleted),
+    version: row.version || 1,
     createdAt,
     updatedAt,
     syncStatus: SYNCED_STATUS,
@@ -75,18 +78,37 @@ export function mapNoteRow(row: NoteRow): Note {
     content: row.content,
     path: row.path,
     isFolder: row.is_folder,
-    parentId: row.parent_client_id ?? undefined,
+    parentId: undefined, // This should be resolved locally, not from server
     parentClientId: row.parent_client_id ?? undefined,
     serverParentId: row.parent_id ?? undefined,
     deleted: Boolean(row._deleted),
+    version: row.version || 1,
     createdAt,
     updatedAt,
     syncStatus: 'synced',
   }
 }
 
-function generateClientId() {
-  return Math.floor(Date.now() + Math.random() * 1000)
+function generateClientId(): string {
+  // Use the same device-aware generation as IndexedDBService
+  const deviceId = getDeviceId()
+  const timestamp = Date.now()
+  const random = Math.random().toString(36).substr(2, 9)
+  return `${deviceId}-${timestamp}-${random}`
+}
+
+function getDeviceId(): string {
+  // Try to get existing device ID from localStorage
+  const stored = localStorage.getItem('brutal-notes-device-id')
+  if (stored) return stored
+
+  // Generate new device ID
+  const timestamp = Date.now()
+  const random = Math.random().toString(36).substr(2, 9)
+  const deviceId = `device-${timestamp}-${random}`
+  
+  localStorage.setItem('brutal-notes-device-id', deviceId)
+  return deviceId
 }
 
 export class TodoService {
@@ -139,7 +161,7 @@ export class TodoService {
     }
   }
 
-  static async updateTodo(id: number, updates: { text?: string; completed?: boolean }): Promise<DatabaseResult<Todo>> {
+  static async updateTodo(id: string, updates: { text?: string; completed?: boolean }): Promise<DatabaseResult<Todo>> {
     try {
       const user = await requireUser()
 
@@ -172,7 +194,7 @@ export class TodoService {
     }
   }
 
-  static async toggleTodo(id: number): Promise<DatabaseResult<Todo>> {
+  static async toggleTodo(id: string): Promise<DatabaseResult<Todo>> {
     try {
       const user = await requireUser()
 
@@ -207,17 +229,14 @@ export class TodoService {
     }
   }
 
-  static async deleteTodo(id: number): Promise<DatabaseResult<void>> {
+  static async deleteTodo(id: string): Promise<DatabaseResult<void>> {
     try {
       const user = await requireUser()
-
-      const timestamp = new Date().toISOString()
 
       const { error } = await supabase
         .from('todos')
         .update({ 
-          _deleted: true,
-          deleted_at: timestamp 
+          _deleted: true
         })
         .eq('user_id', user.id)
         .eq('client_id', id)
@@ -271,7 +290,7 @@ export class NoteService {
     }
   }
 
-  static async getNoteById(id: number): Promise<DatabaseResult<Note>> {
+  static async getNoteById(id: string): Promise<DatabaseResult<Note>> {
     try {
       const user = await requireUser()
 
@@ -295,20 +314,32 @@ export class NoteService {
   static async createNote(
     title: string,
     content: string,
-    path: string,
+    path?: string, // Made optional - will be generated if not provided
     isFolder = false,
-    parentId?: number
+    parentId?: string
   ): Promise<DatabaseResult<Note>> {
     try {
       const user = await requireUser()
       const clientId = generateClientId()
-      const normalizedPath = this.normalizePath(path)
+      
+      // Generate path from parent hierarchy if not provided
+      let finalPath = title // Default to title
+      if (path) {
+        finalPath = this.normalizePath(path)
+      } else if (parentId) {
+        // Get parent to build path
+        const parentResult = await this.getNoteById(parentId)
+        if (parentResult.success && parentResult.data) {
+          const parentTitle = parentResult.data.title
+          finalPath = `${parentTitle}/${title}`
+        }
+      }
 
       const insertPayload = {
         user_id: user.id,
         title,
         content,
-        path: normalizedPath,
+        path: finalPath,
         is_folder: isFolder,
         client_id: clientId,
         parent_client_id: parentId ?? null,
@@ -344,7 +375,7 @@ export class NoteService {
     }
   }
 
-  static async updateNote(id: number, updates: Partial<Note>): Promise<DatabaseResult<Note>> {
+  static async updateNote(id: string, updates: Partial<Note>): Promise<DatabaseResult<Note>> {
     try {
       const user = await requireUser()
 
@@ -376,7 +407,7 @@ export class NoteService {
     }
   }
 
-  static async deleteNote(id: number): Promise<DatabaseResult<void>> {
+  static async deleteNote(id: string): Promise<DatabaseResult<void>> {
     try {
       const user = await requireUser()
 
@@ -406,18 +437,16 @@ export class NoteService {
         await Promise.all(
           (children ?? [])
             .map(child => (child as NoteRow).client_id)
-            .filter((childId): childId is number => typeof childId === 'number')
+            .filter((childId): childId is string => typeof childId === 'string')
             .map(childId => this.deleteNote(childId))
         )
       }
 
       // soft delete note
-      const timestamp = new Date().toISOString()
       const { error } = await supabase
         .from('notes')
         .update({ 
-          _deleted: true,
-          deleted_at: timestamp 
+          _deleted: true
         })
         .eq('user_id', user.id)
         .eq('client_id', id)
@@ -451,7 +480,51 @@ export default {
   NoteService,
 }
 
+/**
+ * Generate logical path from parent-child relationships
+ * This replaces the stored path field with dynamically computed paths
+ */
+export function generateLogicalPath(note: Note, allNotes: Note[]): string {
+  const pathSegments: string[] = []
+  let currentNote = note
+  
+  // Walk up the parent chain to build path
+  while (currentNote.parentClientId) {
+    const parent = allNotes.find(n => n.clientId === currentNote.parentClientId)
+    if (parent) {
+      pathSegments.unshift(parent.title)
+      currentNote = parent
+    } else {
+      break
+    }
+  }
+  
+  // Add the note's own title
+  pathSegments.push(note.title)
+  
+  return pathSegments.join('/')
+}
+
+// Cache for file tree to prevent excessive rebuilding
+const fileTreeCache = new Map<string, { tree: FileNode[], timestamp: number }>()
+const CACHE_TTL = 1000 // Cache for 1 second
+
 export function buildFileTreeFromNotes(notes: Note[]): FileNode[] {
+  // Create cache key from notes data
+  const cacheKey = JSON.stringify(notes.map(n => ({ 
+    id: n.clientId, 
+    title: n.title, 
+    isFolder: n.isFolder, 
+    parentClientId: n.parentClientId 
+  })))
+  
+  // Check cache first
+  const cached = fileTreeCache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    // Return cached tree without logging to prevent spam
+    return cached.tree
+  }
+  
   const sortedNotes = [...notes]
   sortedNotes.sort((a, b) => {
     if (a.isFolder && a.title === 'temp') return -1
@@ -461,19 +534,20 @@ export function buildFileTreeFromNotes(notes: Note[]): FileNode[] {
     return a.createdAt.getTime() - b.createdAt.getTime()
   })
 
-  const nodeMap = new Map<number, FileNode>()
+  const nodeMap = new Map<string, FileNode>()
   const rootNodes: FileNode[] = []
 
+  // First pass: Create all nodes
   sortedNotes.forEach(note => {
     if (!note.clientId) {
       return
     }
 
     const node: FileNode = {
-      id: note.clientId.toString(),
+      id: note.clientId,
       name: note.isFolder && note.title === 'temp' ? note.title : note.title.replace(/\.lexical$/, ''),
       type: note.isFolder ? 'folder' : 'file',
-      noteId: note.clientId,
+      noteId: note.id, // Use local numeric ID for compatibility with existing code
       children: note.isFolder ? [] : undefined,
       expanded: note.title === 'temp',
     }
@@ -481,6 +555,7 @@ export function buildFileTreeFromNotes(notes: Note[]): FileNode[] {
     nodeMap.set(note.clientId, node)
   })
 
+  // Second pass: Build hierarchy using parent relationships
   sortedNotes.forEach(note => {
     if (!note.clientId) {
       return
@@ -502,5 +577,24 @@ export function buildFileTreeFromNotes(notes: Note[]): FileNode[] {
     }
   })
 
+  // Cache the result
+  const totalNodes = nodeMap.size
+  const parentNodes = sortedNotes.filter(n => n.parentClientId).length
+  
+  // Only log if actually building (not from cache)
+  console.log(`🌳 Built file tree: ${rootNodes.length} root nodes, ${parentNodes} child nodes (${totalNodes} total)`)
+  
+  // Store in cache
+  fileTreeCache.set(cacheKey, { tree: rootNodes, timestamp: Date.now() })
+  
+  // Clean old cache entries (keep cache size reasonable)
+  if (fileTreeCache.size > 5) {
+    const entries = Array.from(fileTreeCache.entries())
+    const oldestEntry = entries.reduce((oldest, current) => 
+      current[1].timestamp < oldest[1].timestamp ? current : oldest
+    )
+    fileTreeCache.delete(oldestEntry[0])
+  }
+  
   return rootNodes
 }
