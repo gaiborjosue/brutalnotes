@@ -13,7 +13,7 @@ import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-chan
 import { useNotes } from "@/hooks"
 import { usePanelFocus } from "@/hooks/usePanelFocus"
 import { decodeContent } from "@/lib/share-utils"
-import { Menu, LogOut, Wifi, WifiOff } from "lucide-react"
+import { Menu, LogOut, Wifi, WifiOff, User } from "lucide-react"
 import Star24 from "@/components/stars/s24"
 import { useAuth } from "@/contexts/AuthContext"
 import { ScanNotesPopover } from "@/features/scan-notes/ScanNotesPopover"
@@ -485,9 +485,18 @@ export function MainLayout() {
                         </TooltipProvider>
 
                         {/* User Info */}
-                        <div className="hidden sm:block text-sm font-bold text-gray-700 mr-2">
-                          {user?.email}
-                        </div>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="cursor-pointer p-1 rounded hover:bg-black/5 mr-1">
+                                <User className="h-4 w-4 text-gray-800" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" avoidCollisions={false} sideOffset={4}>
+                              <p className="font-mono font-black">{user?.email}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                         
                         <TooltipProvider>
                           <TourStep
