@@ -2,6 +2,9 @@
 
 An **offline-first note-taking app** with built-in AI assistance that works even without internet connection. Built for productivity, privacy, and speed.
 
+<img width="1584" height="396" alt="20" src="https://github.com/user-attachments/assets/38888498-adfe-499f-8d9e-f580978a109a" />
+
+
 🚀 **Live Demo**: [https://brutalnote.com](https://brutalnote.com)
 
 ## ✨ Key Features
@@ -43,6 +46,9 @@ An **offline-first note-taking app** with built-in AI assistance that works even
 - **Guided tour** - Interactive onboarding
 
 ## 🛠️ Tech Stack
+
+<img width="1584" height="396" alt="19" src="https://github.com/user-attachments/assets/decaaad6-731a-44c2-815e-6491268af088" />
+
 
 - **Frontend**: React 19 + TypeScript + Vite
 - **Editor**: Lexical
