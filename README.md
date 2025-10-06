@@ -1,69 +1,108 @@
-# React + TypeScript + Vite
+# 📝 Brutal Notes - Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+An **offline-first note-taking app** with built-in AI assistance that works even without internet connection. Built for productivity, privacy, and speed.
 
-Currently, two official plugins are available:
+🚀 **Live Demo**: [https://brutalnote.com](https://brutalnote.com)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## ✨ Key Features
 
-## Expanding the ESLint configuration
+### 🔌 Offline-First Architecture
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **Full offline functionality** - Create, edit, and organize notes & todos without internet
+- **IndexedDB storage** - Fast local data persistence
+- **Smart sync** - Automatic background synchronization when online
+- **Conflict resolution** - Handles offline changes seamlessly
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### 🤖 Chrome AI built-in powered assistance & utilities
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
+- **AI content detection** - Analyze content and get a percentage of AI-detected text.
+- **Markdown proofreading** - Grammar and style suggestions
+- **Smart citations** - Automatic citation detection and formatting from a URL.
+- **Content summarization**- AI-powered summarization assistance for a note.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 📝 Rich Text Editing
+
+- **Lexical editor** - Modern, extensible rich text editing
+- **Markdown support** - Write in markdown with live preview
+- **Code blocks** - Syntax highlighting for multiple languages
+- **LaTeX math** - Render mathematical equations with KaTeX
+- **Tables & lists** - Full support for complex formatting
+- **Excalidraw integration** - Embedded diagrams and sketches
+
+### 🎯 Productivity Tools
+
+- **Todo management** - Built-in task tracking
+- **Voice recording** - Audio notes with transcription
+- **File organization** - Hierarchical note management
+- **Mobile scan mode** - OCR for handwritten notes via mobile
+
+### 📱 Additional Features
+
+- **URL encoded note sharing** - Quick note sharing
+- **Lexical export** - Export your notes
+- **Guided tour** - Interactive onboarding
+
+## 🛠️ Tech Stack
+
+- **Frontend**: React 19 + TypeScript + Vite
+- **Editor**: Lexical
+- **Styling**: Tailwind CSS + Radix UI
+- **Storage**: IndexedDB (Dexie) + Supabase
+- **Auth**: Supabase Authentication
+- **AI/ML**: Google in-built AI api & Firebase AI logic
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/gaiborjosue/brutalnotes.git
+cd brutalnotes
+
+# Install dependencies
+npm install
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your configuration
+
+# Start development server
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Environment Variables
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Create a `.env` file with:
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```env
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_key
+VITE_FIREBASE_API_KEY=your_firebase_key
+# ... other Firebase configs
 ```
+
+## 📦 Build
+
+```bash
+# Production build
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+## 🌐 Deployment
+
+Deployed using **Dokploy** on a custom VPS. The app is containerized with Docker for easy deployment and scaling.
+
+**Production URL**: [https://brutalnote.com](https://brutalnote.com)
+
+## 🤝 Contributing
+
+This project was built for Chrome AI built-in API hackathon. Contributions are welcome!
