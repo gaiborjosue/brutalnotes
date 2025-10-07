@@ -1,11 +1,14 @@
-# 📝 Brutal Notes - Frontend
+# 📝 Brutal Note - Frontend
+
+[**Backend Repo**](https://github.com/dariadobrolinski/brutalNotesBackend)
 
 An **offline-first note-taking app** with built-in AI assistance that works even without internet connection. Built for productivity, privacy, and speed.
 
 <img width="1584" height="396" alt="20" src="https://github.com/user-attachments/assets/38888498-adfe-499f-8d9e-f580978a109a" />
 
-
 🚀 **Live Demo**: [https://brutalnote.com](https://brutalnote.com)
+
+Created by me and [@dariadobrolinski](https://github.com/dariadobrolinski) for the [Google Chrome Built-in AI Challenge 2025 Hackathon!](https://googlechromeai2025.devpost.com/)
 
 ## ✨ Key Features
 
