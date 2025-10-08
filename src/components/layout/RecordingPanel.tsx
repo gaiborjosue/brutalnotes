@@ -30,7 +30,7 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
   const streamRef = useRef<MediaStream | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   
-  const MAX_RECORDING_TIME = 15 * 60 // 15 minutes in seconds
+  const MAX_RECORDING_TIME = 90 * 60 // 90 minutes (1.5 hours) in seconds
 
   // Clean up audio URL when component unmounts
   useEffect(() => {
