@@ -13,7 +13,7 @@ import { UnsavedChangesDialog } from "@/components/editor/editor-ui/unsaved-chan
 import { useNotes } from "@/hooks"
 import { usePanelFocus } from "@/hooks/usePanelFocus"
 import { decodeContent } from "@/lib/share-utils"
-import { Menu, LogOut, Wifi, WifiOff } from "lucide-react"
+import { Menu, LogOut, UserRound, Wifi, WifiOff } from "lucide-react"
 import Star24 from "@/components/stars/s24"
 import { useAuth } from "@/contexts/AuthContext"
 import { ScanNotesPopover } from "@/features/scan-notes/ScanNotesPopover"
@@ -470,9 +470,9 @@ export function MainLayout() {
                             <TooltipTrigger asChild>
                               <div className="flex items-center">
                                 {isOnline ? (
-                                  <Wifi size={16} className="text-green-600 mr-2" />
+                                  <Wifi className="mr-2 h-6 w-6 text-green-600" />
                                 ) : (
-                                  <WifiOff size={16} className="text-red-600 mr-2" />
+                                  <WifiOff className="mr-2 h-6 w-6 text-red-600" />
                                 )}
                               </div>
                             </TooltipTrigger>
@@ -485,9 +485,20 @@ export function MainLayout() {
                         </TooltipProvider>
 
                         {/* User Info */}
-                        <div className="hidden sm:block text-sm font-bold text-gray-700 mr-2">
-                          {user?.email}
-                        </div>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="hidden sm:inline-flex items-center justify-center mr-2">
+                                <UserRound className="h-6 w-6 text-gray-700" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" avoidCollisions={false} sideOffset={4}>
+                              <p className="font-mono font-black">
+                                {user?.email ?? "No email"}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                         
                         <TooltipProvider>
                           <TourStep
