@@ -74,8 +74,17 @@ export function ContextMenuPlugin(): JSX.Element {
             }
 
             for (const type of item.types) {
-              const dataString = await (await item.getType(type)).text()
-              data.setData(type, dataString)
+              const blob = await item.getType(type)
+              if (type.startsWith("image/")) {
+                const extension = type.split("/")[1] || "png"
+                const file = new File([blob], `clipboard-image.${extension}`, {
+                  type,
+                })
+                data.items.add(file)
+              } else {
+                const dataString = await blob.text()
+                data.setData(type, dataString)
+              }
             }
 
             const event = new ClipboardEvent("paste", {

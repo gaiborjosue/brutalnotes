@@ -13,6 +13,7 @@ import {
   COMMAND_PRIORITY_EDITOR,
   COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_LOW,
+  PASTE_COMMAND,
   createCommand,
   DRAGOVER_COMMAND,
   DRAGSTART_COMMAND,
@@ -43,6 +44,20 @@ export type InsertImagePayload = Readonly<ImagePayload>
 
 const getDOMSelection = (targetWindow: Window | null): Selection | null =>
   CAN_USE_DOM ? (targetWindow || window).getSelection() : null
+
+function getImageFiles(clipboard: DataTransfer): File[] {
+  const directFiles = Array.from(clipboard.files).filter((file) =>
+    file.type.startsWith("image/")
+  )
+
+  if (directFiles.length > 0) {
+    return directFiles
+  }
+
+  return Array.from(clipboard.items)
+    .map((item) => (item.type.startsWith("image/") ? item.getAsFile() : null))
+    .filter((file): file is File => file !== null)
+}
 
 export const INSERT_IMAGE_COMMAND: LexicalCommand<InsertImagePayload> =
   createCommand("INSERT_IMAGE_COMMAND")
@@ -208,6 +223,42 @@ export function ImagesPlugin({
     }
 
     return mergeRegister(
+      editor.registerCommand<ClipboardEvent>(
+        PASTE_COMMAND,
+        (event) => {
+          if (!event?.clipboardData) {
+            return false
+          }
+
+          const imageFiles = getImageFiles(event.clipboardData)
+          if (imageFiles.length === 0) {
+            return false
+          }
+
+          event.preventDefault()
+
+          imageFiles.forEach((file, index) => {
+            const reader = new FileReader()
+            reader.onload = () => {
+              const src = reader.result
+              if (typeof src === "string") {
+                editor.dispatchCommand(INSERT_IMAGE_COMMAND, {
+                  src,
+                  altText:
+                    file.name ||
+                    (imageFiles.length > 1
+                      ? `Pasted image ${index + 1}`
+                      : "Pasted image"),
+                })
+              }
+            }
+            reader.readAsDataURL(file)
+          })
+
+          return true
+        },
+        COMMAND_PRIORITY_HIGH
+      ),
       editor.registerCommand<InsertImagePayload>(
         INSERT_IMAGE_COMMAND,
         (payload) => {
