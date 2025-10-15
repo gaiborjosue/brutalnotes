@@ -227,13 +227,6 @@ audio::-webkit-media-controls {
     border: 3px solid #000;
   }
 
-  /* Typewriter effect for monospace */
-  .typewriter {
-    font-family: 'Courier New', monospace;
-    line-height: 1.6;
-    letter-spacing: 0.5px;
-  }
-
   /* Custom scrollbar for neobrutalism */
   .custom-scrollbar::-webkit-scrollbar {
     width: 12px;
