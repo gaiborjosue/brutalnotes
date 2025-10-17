@@ -33,6 +33,7 @@ Created by me and [@dariadobrolinski](https://github.com/dariadobrolinski) for t
 - **Code blocks** - Syntax highlighting for multiple languages
 - **LaTeX math** - Render mathematical equations with KaTeX
 - **Tables & lists** - Full support for complex formatting
+- **Emoji typeahead** - `:` trigger with friendly shortcodes and intelligent alias matching
 - **Excalidraw integration** - Embedded diagrams and sketches
 
 ### 🎯 Productivity Tools
