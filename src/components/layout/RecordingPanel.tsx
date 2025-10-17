@@ -2,7 +2,9 @@ import { useState, useRef, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Mic, Square, Download, FileText, Circle, RotateCcw, Loader2, Upload } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Mic, Square, Download, FileText, Circle, RotateCcw, Loader2, Upload, Languages } from "lucide-react"
 import Star8 from "@/components/stars/s8"
 import { BrutalAudioLevelMeter } from "@/components/ui/brutal-audio-level-meter"
 import { geminiModel, blobToGenerativePart, normalizeAudioMimeType } from "@/lib/firebase"
@@ -19,6 +21,7 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [hasRecording, setHasRecording] = useState(false)
   const [isConverting, setIsConverting] = useState(false)
+  const [noteLanguage, setNoteLanguage] = useState<"en" | "es">("en")
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [generatedNotes, setGeneratedNotes] = useState<string | null>(null)
   
@@ -165,16 +168,18 @@ export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
       audioPart.inlineData.mimeType = normalizedMimeType
 
       // Create a detailed prompt for generating compact, relevant notes
-      const prompt = `Please transcribe and convert this audio recording into structured, compact lecture notes in markdown format. 
+      const languageLabel = noteLanguage === "es" ? "Spanish (Español)" : "English"
+      const prompt = `Please transcribe and convert this audio recording into structured, compact lecture notes in ${languageLabel}.
 
 Requirements:
 - Only include the most important and relevant information
-- Use clear headings (##), bullet points, and emphasis (**bold**, *italic*) 
+- Use clear headings (##), bullet points, and emphasis (**bold**, *italic*)
 - Organize content logically with proper structure
 - Remove filler words, "um"s, repetitions, and irrelevant content
 - Focus on key concepts, definitions, examples, and actionable insights
 - Keep it concise but comprehensive
 - Use markdown formatting for better readability
+- Write all text, headings, and bullet points entirely in ${languageLabel}.
 
 Format the output as clean markdown that captures the essence of the lecture.`
 
@@ -223,7 +228,8 @@ Format the output as clean markdown that captures the essence of the lecture.`
         // Insert the generated notes directly into the editor
         if (onInsertContent) {
           // Add some formatting to make it clear these are generated notes
-          const formattedNotes = `## 📝 Generated Lecture Notes\n\n${trimmedText}\n\n---\n\n`
+          const headerTitle = noteLanguage === "es" ? "## 📝 Notas Generadas" : "## 📝 Generated Lecture Notes"
+          const formattedNotes = `${headerTitle}\n\n${trimmedText}\n\n---\n\n`
           onInsertContent(formattedNotes)
           console.log('Generated notes inserted into editor:', trimmedText.substring(0, 100) + '...')
         } else {
@@ -327,21 +333,54 @@ Format the output as clean markdown that captures the essence of the lecture.`
   return (
     <Card className="h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white">
       <CardHeader className="border-b-4 border-black bg-purple-300 p-3">
-        <CardTitle className="text-lg font-black text-black flex items-center justify-between">
+        <CardTitle className="text-lg font-black text-black flex items-center justify-between gap-2">
           <span className="flex items-center gap-2">
             <Star8 size={20} color="#000" />
             RECORD
           </span>
-          {hasRecording && (
-            <button
-              onClick={startNewRecording}
-              className="flex items-center gap-1 text-sm font-black text-black hover:text-gray-700 transition-colors"
-              title="New Audio"
-            >
-              <RotateCcw size={16} />
-              <span>NEW AUDIO</span>
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {hasRecording && (
+              <button
+                onClick={startNewRecording}
+                className="flex items-center gap-1 text-sm font-black text-black hover:text-gray-700 transition-colors"
+                title="New Audio"
+              >
+                <RotateCcw size={16} />
+                <span>NEW AUDIO</span>
+              </button>
+            )}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="h-8 w-8 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white text-black p-0 flex items-center justify-center"
+                  aria-label="Change note language"
+                >
+                  <Languages className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 border-2 border-black bg-white text-black font-black p-2" align="end" sideOffset={6}>
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setNoteLanguage("en")}
+                    className={`flex items-center justify-between rounded-md border-2 px-2 py-1 text-sm transition-colors ${noteLanguage === "en" ? "border-black bg-blue-200" : "border-transparent hover:border-black hover:bg-gray-100"}`}
+                  >
+                    <span>English</span>
+                    {noteLanguage === "en" && <span>✓</span>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNoteLanguage("es")}
+                    className={`flex items-center justify-between rounded-md border-2 px-2 py-1 text-sm transition-colors ${noteLanguage === "es" ? "border-black bg-blue-200" : "border-transparent hover-border-black hover:bg-gray-100"}`}
+                  >
+                    <span>Español</span>
+                    {noteLanguage === "es" && <span>✓</span>}
+                  </button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="p-2 h-[calc(100%-3.25rem)] flex flex-col gap-2 overflow-auto min-h-0">
