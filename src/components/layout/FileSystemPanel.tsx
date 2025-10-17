@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from "react"
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle, type KeyboardEvent } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -32,9 +32,12 @@ interface FileSystemPanelProps {
   onFolderCleared?: (deletedNoteIds: number[]) => void
   currentFileId?: number | null
   beforeFileMove?: (moveAction: () => Promise<void>) => Promise<boolean>
+  collapsed?: boolean
+  onToggle?: () => void
+  className?: string
 }
 
-export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick, onFileDeleted, onFolderCleared, currentFileId, beforeFileMove }, ref) => {
+export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelProps>(({ onFileClick, onNewFileClick, onFileDeleted, onFolderCleared, currentFileId, beforeFileMove, collapsed = false, onToggle, className }, ref) => {
   const { 
     notes, 
     fileTree: shapeFileTree, 
@@ -578,9 +581,30 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     )
   }
 
+  const handleHeaderKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onToggle) return
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      onToggle()
+    }
+  }
+
+  const cardClasses = collapsed
+    ? "border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
+    : "h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white flex flex-col"
+
   return (
-    <Card className="h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white flex flex-col">
-      <CardHeader className="border-b-4 border-black bg-blue-300 p-3">
+    <Card
+      className={`${cardClasses} ${onToggle ? "cursor-pointer" : ""} ${className ?? ""}`.trim()}
+      aria-expanded={!collapsed}
+    >
+      <CardHeader
+        className="border-b-4 border-black bg-blue-300 p-3"
+        onClick={onToggle}
+        role={onToggle ? "button" : undefined}
+        tabIndex={onToggle ? 0 : undefined}
+        onKeyDown={handleHeaderKeyDown}
+      >
         <CardTitle className="text-lg font-black text-black flex items-center justify-between">
           <span className="flex items-center gap-2">
             <Star27 size={20} color="#000" />
@@ -604,47 +628,55 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
               />
             )}
           </span>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              className="h-7 px-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-gray-100 text-black"
-              onClick={createNewFolder}
-              title="New folder"
-            >
-              <FolderPlus className="h-4 w-4" />
-            </Button>
-            <Button
-              size="sm"
-              className="h-7 px-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-gray-100 text-black"
-              onClick={() => {
-                if (onNewFileClick) {
-                  onNewFileClick(createNewNote)
-                } else {
-                  createNewNote()
-                }
-              }}
-              title="New note"
-            >
-              <FilePlus className="h-4 w-4" />
-            </Button>
-          </div>
+          {!collapsed && (
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                className="h-7 px-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-gray-100 text-black"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  createNewFolder()
+                }}
+                title="New folder"
+              >
+                <FolderPlus className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 px-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-gray-100 text-black"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (onNewFileClick) {
+                    onNewFileClick(createNewNote)
+                  } else {
+                    createNewNote()
+                  }
+                }}
+                title="New note"
+              >
+                <FilePlus className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0 pt-0 flex-1 min-h-0">
-        <ScrollArea className="h-full min-h-0">
-          <div className="p-3 pb-4 space-y-1">
-            {isInitialLoading ? (
-              <div className="text-center text-gray-500 font-mono">Loading files...</div>
-            ) : fileTree.length === 0 ? (
-              <div className="text-center text-gray-500 font-mono text-sm">
-                No files yet. Save your first note! 📝
-              </div>
-            ) : (
-              fileTree.map(node => renderFileNode(node))
-            )}
-          </div>
-        </ScrollArea>
-      </CardContent>
+      {!collapsed && (
+        <CardContent className="p-0 pt-0 flex-1 min-h-0">
+          <ScrollArea className="h-full min-h-0">
+            <div className="p-3 pb-4 space-y-1">
+              {isInitialLoading ? (
+                <div className="text-center text-gray-500 font-mono">Loading files...</div>
+              ) : fileTree.length === 0 ? (
+                <div className="text-center text-gray-500 font-mono text-sm">
+                  No files yet. Save your first note! 📝
+                </div>
+              ) : (
+                fileTree.map(node => renderFileNode(node))
+              )}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      )}
     </Card>
   )
 })

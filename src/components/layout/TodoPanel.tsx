@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, type KeyboardEvent } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,7 +8,13 @@ import { Plus, Trash2 } from "lucide-react"
 import Star10 from "@/components/stars/s10"
 import { useTodos } from "@/hooks"
 
-export function TodoPanel() {
+interface TodoPanelProps {
+  collapsed?: boolean
+  onToggle?: () => void
+  className?: string
+}
+
+export function TodoPanel({ collapsed = false, onToggle, className }: TodoPanelProps = {}) {
   const [newTodo, setNewTodo] = useState("")
   const { 
     todos, 
@@ -50,9 +56,30 @@ export function TodoPanel() {
     }
   }
 
+  const handleHeaderKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onToggle) return
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      onToggle()
+    }
+  }
+
+  const cardClasses = collapsed
+    ? "border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
+    : "h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white flex flex-col"
+
   return (
-    <Card className="h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white flex flex-col">
-      <CardHeader className="border-b-4 border-black bg-yellow-300 p-3">
+    <Card
+      className={`${cardClasses} ${onToggle ? "cursor-pointer" : ""} ${className ?? ""}`.trim()}
+      aria-expanded={!collapsed}
+    >
+      <CardHeader
+        className="border-b-4 border-black bg-yellow-300 p-3"
+        onClick={onToggle}
+        role={onToggle ? "button" : undefined}
+        tabIndex={onToggle ? 0 : undefined}
+        onKeyDown={handleHeaderKeyDown}
+      >
         <CardTitle className="text-lg font-black text-black flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Star10 size={20} color="#000" />
@@ -78,7 +105,8 @@ export function TodoPanel() {
           </div>
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-3 pt-0 flex-1 min-h-0">
+      {!collapsed && (
+        <CardContent className="p-3 pt-0 flex-1 min-h-0">
         <div className="space-y-3 h-full min-h-0 flex flex-col">
           {syncError && (
             <div className="bg-red-100 border-2 border-red-500 text-red-700 px-2 py-1 text-xs font-mono rounded">
@@ -164,7 +192,8 @@ export function TodoPanel() {
             </div>
           </ScrollArea>
         </div>
-      </CardContent>
+        </CardContent>
+      )}
     </Card>
   )
 }

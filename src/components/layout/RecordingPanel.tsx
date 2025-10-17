@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, type KeyboardEvent } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -10,9 +10,12 @@ import { FirebaseError } from "firebase/app"
 
 interface RecordingPanelProps {
   onInsertContent?: (content: string) => void
+  collapsed?: boolean
+  onToggle?: () => void
+  className?: string
 }
 
-export function RecordingPanel({ onInsertContent }: RecordingPanelProps) {
+export function RecordingPanel({ onInsertContent, collapsed = false, onToggle, className }: RecordingPanelProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
@@ -324,17 +327,41 @@ Format the output as clean markdown that captures the essence of the lecture.`
 
   const progressPercentage = (recordingTime / MAX_RECORDING_TIME) * 100
 
+  const handleHeaderKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onToggle) return
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      onToggle()
+    }
+  }
+
+  const cardClasses = collapsed
+    ? "border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
+    : "h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
+
   return (
-    <Card className="h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white">
-      <CardHeader className="border-b-4 border-black bg-purple-300 p-3">
+    <Card
+      className={`${cardClasses} ${onToggle ? "cursor-pointer" : ""} ${className ?? ""}`.trim()}
+      aria-expanded={!collapsed}
+    >
+      <CardHeader
+        className="border-b-4 border-black bg-purple-300 p-3"
+        onClick={onToggle}
+        role={onToggle ? "button" : undefined}
+        tabIndex={onToggle ? 0 : undefined}
+        onKeyDown={handleHeaderKeyDown}
+      >
         <CardTitle className="text-lg font-black text-black flex items-center justify-between">
           <span className="flex items-center gap-2">
             <Star8 size={20} color="#000" />
             RECORD
           </span>
-          {hasRecording && (
+          {hasRecording && !collapsed && (
             <button
-              onClick={startNewRecording}
+              onClick={(event) => {
+                event.stopPropagation()
+                startNewRecording()
+              }}
               className="flex items-center gap-1 text-sm font-black text-black hover:text-gray-700 transition-colors"
               title="New Audio"
             >
@@ -344,7 +371,8 @@ Format the output as clean markdown that captures the essence of the lecture.`
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-2 h-[calc(100%-3.25rem)] flex flex-col gap-2 overflow-auto min-h-0">
+      {!collapsed && (
+        <CardContent className="p-2 h-[calc(100%-3.25rem)] flex flex-col gap-2 overflow-auto min-h-0">
         {/* Recording Status */}
         <div className="mx-2">
           <div className="flex items-center justify-between text-black font-bold">
@@ -476,7 +504,8 @@ Format the output as clean markdown that captures the essence of the lecture.`
             </div>
           </div>
         )}
-      </CardContent>
+        </CardContent>
+      )}
     </Card>
   )
 }
