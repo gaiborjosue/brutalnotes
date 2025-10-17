@@ -462,8 +462,8 @@ export function MainLayout() {
                 position="left"
                 order={5}
               >
-                <Card className="h-full min-h-0 border-2 sm:border-4 border-black shadow-none bg-white">
-                  <CardHeader className="border-b-2 sm:border-b-4 border-black bg-neutral-100 py-2 sm:py-6">
+                <Card className="flex h-full min-h-0 flex-col border-2 sm:border-4 border-black shadow-none bg-white">
+                  <CardHeader className="border-b-2 sm:border-b-4 border-black bg-neutral-100 py-1 sm:py-2">
                     <CardTitle className="text-lg sm:text-2xl font-black text-black flex items-center justify-between w-full">
                       <div className="flex items-center gap-2 sm:gap-3">
                         {/* Mobile Hamburger Menu */}
@@ -561,7 +561,7 @@ export function MainLayout() {
                       </div>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0 h-[calc(100%-3rem)] sm:h-[calc(100%-4rem)] relative overflow-hidden min-h-0">
+                  <CardContent className="flex-1 p-0 relative overflow-hidden min-h-0">
                            {/* Rich Text Editor */}
                            <div className="h-full max-h-full overflow-hidden">
                              <BrutalEditor 
