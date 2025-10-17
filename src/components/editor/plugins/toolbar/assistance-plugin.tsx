@@ -2,7 +2,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Bot } from "lucide-react"
+import { Bot, TriangleAlert } from "lucide-react"
 import { $getRoot } from "lexical"
 import { $convertToMarkdownString } from "@lexical/markdown"
 import { TRANSFORMERS } from "@lexical/markdown"
@@ -119,7 +119,7 @@ export function AssistancePlugin({
             }}
           >
             <div className="flex items-center gap-1">
-              <Bot className="size-4 text-blue-500" />
+              <TriangleAlert className="size-4 text-yellow-500" />
               <span>Detect AI{aiDetectionBusy ? "…" : ""}</span>
             </div>
           </SelectItem>
