@@ -39,7 +39,7 @@ Created by me and [@dariadobrolinski](https://github.com/dariadobrolinski) for t
 ### 🎯 Productivity Tools
 
 - **Todo management** - Built-in task tracking
-- **Voice recording** - Audio notes with transcription
+- **Voice recording** - Audio notes with transcription (English by default, with support for recording lectures and spoken notes in Spanish).
 - **File organization** - Hierarchical note management
 - **Mobile scan mode** - OCR for handwritten notes via mobile
 
