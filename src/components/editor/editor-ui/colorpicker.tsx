@@ -37,7 +37,7 @@ export default function ColorPicker({
           variant={"outline"}
           {...rest}
         >
-          <span className="size-4 rounded-full">{icon}</span>
+          {icon}
           {/* <ChevronDownIcon className='size-4'/> */}
         </Button>
       </PopoverTrigger>
