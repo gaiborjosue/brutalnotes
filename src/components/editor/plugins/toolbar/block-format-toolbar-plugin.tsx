@@ -70,9 +70,9 @@ export function BlockFormatDropDown({
         setBlockType(value as keyof typeof blockTypeToBlockName)
       }}
     >
-      <SelectTrigger className="!h-8 w-min gap-1">
+      <SelectTrigger className="!h-8 w-min gap-1 sm:gap-2">
         {blockTypeToBlockName[blockType].icon}
-        <span>{blockTypeToBlockName[blockType].label}</span>
+        <span className="hidden sm:inline">{blockTypeToBlockName[blockType].label}</span>
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>{children}</SelectGroup>

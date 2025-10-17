@@ -52,35 +52,37 @@ export function FontSizeToolbarPlugin() {
 
   return (
     <div className="flex items-center gap-1">
-      <div className="flex items-center gap-1">
-        <Button
-          variant="outline"
-          size="icon"
-          className="!h-8 !w-8"
-          onClick={() => updateFontSize(fontSize - 1)}
-          disabled={fontSize <= MIN_FONT_SIZE}
-        >
-          <Minus className="size-3" />
-        </Button>
-        <Input
-          value={fontSize}
-          onChange={(e) =>
-            updateFontSize(parseInt(e.target.value) || DEFAULT_FONT_SIZE)
-          }
-          className="!h-8 w-12 text-center"
-          min={MIN_FONT_SIZE}
-          max={MAX_FONT_SIZE}
-        />
-        <Button
-          variant="outline"
-          size="icon"
-          className="!h-8 !w-8"
-          onClick={() => updateFontSize(fontSize + 1)}
-          disabled={fontSize >= MAX_FONT_SIZE}
-        >
-          <Plus className="size-3" />
-        </Button>
-      </div>
+      <Button
+        variant="outline"
+        size="icon"
+        className="!h-8 !w-8"
+        onClick={() => updateFontSize(fontSize - 1)}
+        disabled={fontSize <= MIN_FONT_SIZE}
+        aria-label="Decrease font size"
+      >
+        <Minus className="size-3" />
+      </Button>
+      <Input
+        value={fontSize}
+        onChange={(e) =>
+          updateFontSize(parseInt(e.target.value) || DEFAULT_FONT_SIZE)
+        }
+        className="!h-8 w-12 text-center hidden sm:block"
+        min={MIN_FONT_SIZE}
+        max={MAX_FONT_SIZE}
+        inputMode="numeric"
+        aria-label="Font size"
+      />
+      <Button
+        variant="outline"
+        size="icon"
+        className="!h-8 !w-8"
+        onClick={() => updateFontSize(fontSize + 1)}
+        disabled={fontSize >= MAX_FONT_SIZE}
+        aria-label="Increase font size"
+      >
+        <Plus className="size-3" />
+      </Button>
     </div>
   )
 }

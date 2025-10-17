@@ -28,7 +28,7 @@ export function MainLayout() {
   const [currentFileId, setCurrentFileId] = useState<number | null>(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [isFreshSignup, setIsFreshSignup] = useState(false)
-  const [activeMobilePanel, setActiveMobilePanel] = useState<'todo' | 'files' | 'record' | null>(null)
+  const [activeMobilePanel, setActiveMobilePanel] = useState<'todo' | 'files' | 'record' | null>('files')
   
   // Panel focus management for Ctrl+hover/click
   const { 
@@ -446,8 +446,8 @@ export function MainLayout() {
       storageKey={`brutal-notes-tour-completed-${user?.id}`}
     >
       <div className="min-h-[100dvh] bg-neutral-50 font-mono">
-        <div className="w-full h-[100dvh] p-2">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-2 h-full">
+        <div className="w-full h-[100dvh] p-1 sm:p-2">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-1 sm:gap-2 h-full">
             {/* Desktop Sidebar - Hidden on tablet/mobile */}
             <div className="hidden lg:block lg:col-span-1 min-h-0 overflow-visible">
               {renderSidebarPanels()}
@@ -462,10 +462,10 @@ export function MainLayout() {
                 position="left"
                 order={5}
               >
-                <Card className="h-full min-h-0 border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white">
-                  <CardHeader className="border-b-4 border-black bg-neutral-100">
-                    <CardTitle className="text-2xl font-black text-black flex items-center justify-between w-full">
-                      <div className="flex items-center gap-3">
+                <Card className="h-full min-h-0 border-2 sm:border-4 border-black shadow-none bg-white">
+                  <CardHeader className="border-b-2 sm:border-b-4 border-black bg-neutral-100 py-2 sm:py-6">
+                    <CardTitle className="text-lg sm:text-2xl font-black text-black flex items-center justify-between w-full">
+                      <div className="flex items-center gap-2 sm:gap-3">
                         {/* Mobile Hamburger Menu */}
                         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                           <SheetTrigger asChild>
@@ -489,8 +489,8 @@ export function MainLayout() {
                           </SheetContent>
                         </Sheet>
                         
-                        <Star24 size={32} color="#000" />
-                        BRUTAL NOTE
+                        <Star24 size={24} className="sm:w-8 sm:h-8" color="#000" />
+                        <span className="hidden sm:inline">BRUTAL NOTE</span>
                       </div>
                       <div className="flex items-center gap-2">
                         {/* Connectivity Status - subtle and contextual */}
@@ -561,7 +561,7 @@ export function MainLayout() {
                       </div>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0 h-[calc(100%-4rem)] relative overflow-hidden min-h-0">
+                  <CardContent className="p-0 h-[calc(100%-3rem)] sm:h-[calc(100%-4rem)] relative overflow-hidden min-h-0">
                            {/* Rich Text Editor */}
                            <div className="h-full max-h-full overflow-hidden">
                              <BrutalEditor 

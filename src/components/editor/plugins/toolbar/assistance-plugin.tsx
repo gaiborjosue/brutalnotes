@@ -53,9 +53,9 @@ export function AssistancePlugin({
   return (
     <>
     <Select value={""} disabled={isDisabled}>
-      <SelectTrigger className="!h-8 w-min gap-1">
+      <SelectTrigger className="!h-8 w-min gap-1 sm:gap-2">
         <Bot className="size-4" />
-        <span>Assistance</span>
+        <span className="hidden sm:inline">Assistance</span>
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>

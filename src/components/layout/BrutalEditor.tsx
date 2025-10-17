@@ -584,7 +584,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
       {/* Brutal Toolbar */}
       <ToolbarPlugin>
         {({ blockType }) => (
-          <div className="flex flex-nowrap items-center gap-1 p-2 border-b-4 border-black bg-neutral-200 whitespace-nowrap overflow-hidden text-xs [&_button]:!border-2 [&_button]:!border-black [&_button]:!shadow-[2px_2px_0px_0px_#000] [&_button]:!bg-white [&_button]:!h-8 [&_button]:!px-2 [&_button:hover]:!translate-x-1 [&_button:hover]:!translate-y-1 [&_button:hover]:!shadow-none [&_button]:!font-black [&_button]:!text-black [&_button[aria-pressed='true']]:!bg-black [&_button[aria-pressed='true']]:!text-white [&_svg]:h-3 [&_svg]:w-3 disabled:[&_button]:!opacity-50 disabled:[&_button]:!bg-gray-200 [&_[role='combobox']]:!border-2 [&_[role='combobox']]:!border-black [&_[role='combobox']]:!shadow-[2px_2px_0px_0px_#000] [&_[role='combobox']]:!bg-white [&_[role='combobox']]:!font-black [&_[role='combobox']]:!text-black [&_[role='combobox']]:!h-8 [&_[role='combobox']]:!px-2 [&_[role='combobox']]:text-xs">
+          <div className="toolbar-scroll-mobile flex flex-nowrap items-center gap-1 p-1.5 sm:p-2 border-b-4 border-black bg-neutral-200 whitespace-nowrap text-xs [&_button]:!border-2 [&_button]:!border-black [&_button]:!shadow-[2px_2px_0px_0px_#000] [&_button]:!bg-white [&_button]:!h-8 [&_button]:!px-2 [&_button:hover]:!translate-x-1 [&_button:hover]:!translate-y-1 [&_button:hover]:!shadow-none [&_button]:!font-black [&_button]:!text-black [&_button[aria-pressed='true']]:!bg-black [&_button[aria-pressed='true']]:!text-white [&_svg]:h-3 [&_svg]:w-3 disabled:[&_button]:!opacity-50 disabled:[&_button]:!bg-gray-200 [&_[role='combobox']]:!border-2 [&_[role='combobox']]:!border-black [&_[role='combobox']]:!shadow-[2px_2px_0px_0px_#000] [&_[role='combobox']]:!bg-white [&_[role='combobox']]:!font-black [&_[role='combobox']]:!text-black [&_[role='combobox']]:!h-8 [&_[role='combobox']]:!px-2 [&_[role='combobox']]:text-xs sm:[&_span]:inline [&_span]:hidden">
             <BlockFormatDropDown>
               <FormatParagraph />
               <FormatHeading levels={["h1", "h2", "h3"]} />
@@ -630,12 +630,12 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
       <div className="flex-1 relative overflow-hidden min-h-0 max-h-full">
                <RichTextPlugin
                  contentEditable={
-                   <div className="absolute inset-0 p-6 overflow-y-auto custom-scrollbar" ref={contentEditableRef}>
+                   <div className="absolute inset-0 p-2 sm:p-6 overflow-y-auto custom-scrollbar" ref={contentEditableRef}>
                      <div className="" ref={onRef}>
                        <ContentEditable
                          placeholder={placeholder}
-                           placeholderClassName="pointer-events-none absolute top-0 left-0 p-6 pr-24 font-mono text-lg leading-7 text-neutral-400"
-                         className="outline-none font-mono text-lg leading-7 pr-24 w-full min-h-full"
+                          placeholderClassName="pointer-events-none absolute top-0 left-0 p-2 sm:p-6 pr-2 sm:pr-24 font-mono text-sm sm:text-lg leading-5 sm:leading-7 text-neutral-400"
+                        className="outline-none font-mono text-sm sm:text-lg leading-5 sm:leading-7 pr-2 sm:pr-24 w-full min-h-full"
                        />
                      </div>
                    </div>
@@ -712,8 +712,8 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
       
       {/* Actions Bar */}
       <ActionsPlugin>
-               <div className="clear-both flex items-center justify-between gap-2 overflow-auto border-t-4 border-black bg-neutral-100 p-3 [&_button]:!border-2 [&_button]:!border-black [&_button]:!shadow-[2px_2px_0px_0px_#000] [&_button]:!bg-white [&_button:hover]:!translate-x-1 [&_button:hover]:!translate-y-1 [&_button:hover]:!shadow-none [&_button]:!font-black [&_button]:!text-black disabled:[&_button]:!opacity-50 disabled:[&_button]:!bg-gray-200">
-                 <div className="flex flex-1 justify-start gap-2">
+               <div className="clear-both flex items-center justify-between gap-1.5 sm:gap-2 overflow-auto border-t-4 border-black bg-neutral-100 p-1.5 sm:p-3 [&_button]:!border-2 [&_button]:!border-black [&_button]:!shadow-[2px_2px_0px_0px_#000] [&_button]:!bg-white [&_button:hover]:!translate-x-1 [&_button:hover]:!translate-y-1 [&_button:hover]:!shadow-none [&_button]:!font-black [&_button]:!text-black disabled:[&_button]:!opacity-50 disabled:[&_button]:!bg-gray-200">
+                 <div className="flex flex-1 justify-start gap-1.5 sm:gap-2">
                    <SaveFilePlugin 
                      onFileSaved={onFileSaved} 
                      currentDraftFileId={currentDraftFileId}
@@ -724,7 +724,7 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
                  <div className="flex justify-center">
                    <CounterCharacterPlugin charset="UTF-16" />
                  </div>
-                <div id="editor-actions-right" className="relative flex flex-1 justify-end gap-2">
+                <div id="editor-actions-right" className="relative flex flex-1 justify-end gap-1.5 sm:gap-2">
                    <ShareNotePlugin />
                    <ClearEditorActionPlugin />
                  </div>

@@ -104,12 +104,13 @@ export function ElementFormatToolbarPlugin() {
   }
 
   return (
-    <>
+    <div className="flex items-center gap-1">
       <ToggleGroup
         type="single"
         value={elementFormat}
         defaultValue={elementFormat}
         onValueChange={handleValueChange}
+        className="flex"
       >
         {/* Alignment toggles */}
         {Object.entries(ELEMENT_FORMAT_OPTIONS).map(([value, option]) => (
@@ -119,18 +120,22 @@ export function ElementFormatToolbarPlugin() {
             variant={"outline"}
             size="sm"
             aria-label={option.name}
+            className="min-w-8"
           >
             {option.icon}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
-      <Separator orientation="vertical" className="!h-7" />
+      <div className="hidden sm:block">
+        <Separator orientation="vertical" className="!h-7" />
+      </div>
       {/* Indentation toggles */}
       <ToggleGroup
         type="single"
         value={elementFormat}
         defaultValue={elementFormat}
         onValueChange={handleValueChange}
+        className="hidden sm:flex"
       >
         <ToggleGroupItem
           value="outdent"
@@ -150,6 +155,6 @@ export function ElementFormatToolbarPlugin() {
           <IndentIncreaseIcon className="size-4" />
         </ToggleGroupItem>
       </ToggleGroup>
-    </>
+    </div>
   )
 }
