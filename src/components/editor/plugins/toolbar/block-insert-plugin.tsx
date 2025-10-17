@@ -15,9 +15,9 @@ export function BlockInsertPlugin({ children }: { children: React.ReactNode }) {
     <>
       {modal}
       <Select value={""}>
-        <SelectTrigger className="!h-8 w-min gap-1">
+        <SelectTrigger className="!h-8 w-min gap-1 sm:gap-2">
           <PlusIcon className="size-4" />
-          <span>Insert</span>
+          <span className="hidden sm:inline">Insert</span>
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>{children}</SelectGroup>

@@ -28,6 +28,7 @@ export function MainLayout() {
   const [currentFileId, setCurrentFileId] = useState<number | null>(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [isFreshSignup, setIsFreshSignup] = useState(false)
+  const [activeMobilePanel, setActiveMobilePanel] = useState<'todo' | 'files' | 'record' | null>('files')
   
   // Panel focus management for Ctrl+hover/click
   const { 
@@ -312,16 +313,24 @@ export function MainLayout() {
     setActionDescription("")
   }
 
-  const renderSidebarPanels = () => (
-    <div className="flex flex-col gap-2 h-full min-h-0">
+  const handleMobilePanelToggle = (panel: 'todo' | 'files' | 'record') => {
+    setActiveMobilePanel(prev => (prev === panel ? null : panel))
+  }
+
+  const renderSidebarPanels = (isMobileVariant = false) => (
+    <div className={`flex flex-col ${isMobileVariant ? 'gap-2' : 'gap-2'} ${isMobileVariant ? 'h-auto' : 'h-full min-h-0'}`}>
       {/* Todo Panel */}
       <div 
-        className={`flex-1 min-h-0 relative transition-all duration-200 ${
-          isFocused('todo') ? 'flex-[3] z-10' : ''
+        className={`relative transition-all duration-200 ${
+          isMobileVariant
+            ? 'flex-none w-full'
+            : `flex-1 min-h-0 ${isFocused('todo') ? 'flex-[3] z-10' : ''}`
+        } ${
+          isMobileVariant && activeMobilePanel === 'todo' ? 'z-10' : isMobileVariant ? 'opacity-80' : ''
         }`}
-        onMouseEnter={() => handlePanelHover('todo')}
-        onMouseLeave={handlePanelLeave}
-        onClick={() => handlePanelClick('todo')}
+        onMouseEnter={!isMobileVariant ? () => handlePanelHover('todo') : undefined}
+        onMouseLeave={!isMobileVariant ? handlePanelLeave : undefined}
+        onClick={!isMobileVariant ? () => handlePanelClick('todo') : undefined}
       >
         <TourStep
           id="todo-panel"
@@ -330,21 +339,29 @@ export function MainLayout() {
           position="right"
           order={1}
         >
-          <TodoPanel />
+          <TodoPanel
+            collapsed={isMobileVariant ? activeMobilePanel !== 'todo' : false}
+            onToggle={isMobileVariant ? () => handleMobilePanelToggle('todo') : undefined}
+            className={isMobileVariant && activeMobilePanel === 'todo' ? 'min-h-[55vh] max-h-[75vh]' : undefined}
+          />
         </TourStep>
-        {shouldShowTooltip('todo') && (
+        {!isMobileVariant && shouldShowTooltip('todo') && (
           <FocusTooltip show={true} isFocused={isFocused('todo')} />
         )}
       </div>
       
       {/* File System Panel */}
       <div 
-        className={`flex-1 min-h-0 relative transition-all duration-200 ${
-          isFocused('files') ? 'flex-[3] z-10' : ''
+        className={`relative transition-all duration-200 ${
+          isMobileVariant
+            ? 'flex-none w-full'
+            : `flex-1 min-h-0 ${isFocused('files') ? 'flex-[3] z-10' : ''}`
+        } ${
+          isMobileVariant && activeMobilePanel === 'files' ? 'z-10' : isMobileVariant ? 'opacity-80' : ''
         }`}
-        onMouseEnter={() => handlePanelHover('files')}
-        onMouseLeave={handlePanelLeave}
-        onClick={() => handlePanelClick('files')}
+        onMouseEnter={!isMobileVariant ? () => handlePanelHover('files') : undefined}
+        onMouseLeave={!isMobileVariant ? handlePanelLeave : undefined}
+        onClick={!isMobileVariant ? () => handlePanelClick('files') : undefined}
       >
         <TourStep
           id="files-panel"
@@ -377,21 +394,28 @@ export function MainLayout() {
             onFileDeleted={handleFileDeleted}
             onFolderCleared={handleFolderCleared}
             currentFileId={currentFileId}
+            collapsed={isMobileVariant ? activeMobilePanel !== 'files' : false}
+            onToggle={isMobileVariant ? () => handleMobilePanelToggle('files') : undefined}
+            className={isMobileVariant && activeMobilePanel === 'files' ? 'min-h-[55vh] max-h-[75vh]' : undefined}
           />
         </TourStep>
-        {shouldShowTooltip('files') && (
+        {!isMobileVariant && shouldShowTooltip('files') && (
           <FocusTooltip show={true} isFocused={isFocused('files')} />
         )}
       </div>
       
       {/* Recording Panel */}
       <div 
-        className={`flex-1 min-h-0 relative transition-all duration-200 ${
-          isFocused('record') ? 'flex-[3] z-10' : ''
+        className={`relative transition-all duration-200 ${
+          isMobileVariant
+            ? 'flex-none w-full'
+            : `flex-1 min-h-0 ${isFocused('record') ? 'flex-[3] z-10' : ''}`
+        } ${
+          isMobileVariant && activeMobilePanel === 'record' ? 'z-10' : isMobileVariant ? 'opacity-80' : ''
         }`}
-        onMouseEnter={() => handlePanelHover('record')}
-        onMouseLeave={handlePanelLeave}
-        onClick={() => handlePanelClick('record')}
+        onMouseEnter={!isMobileVariant ? () => handlePanelHover('record') : undefined}
+        onMouseLeave={!isMobileVariant ? handlePanelLeave : undefined}
+        onClick={!isMobileVariant ? () => handlePanelClick('record') : undefined}
       >
         <TourStep
           id="record-panel"
@@ -400,9 +424,14 @@ export function MainLayout() {
           position="right"
           order={3}
         >
-          <RecordingPanel onInsertContent={(content: string) => insertContentRef.current?.(content)} />
+          <RecordingPanel
+            onInsertContent={(content: string) => insertContentRef.current?.(content)}
+            collapsed={isMobileVariant ? activeMobilePanel !== 'record' : false}
+            onToggle={isMobileVariant ? () => handleMobilePanelToggle('record') : undefined}
+            className={isMobileVariant && activeMobilePanel === 'record' ? 'min-h-[55vh] max-h-[75vh]' : undefined}
+          />
         </TourStep>
-        {shouldShowTooltip('record') && (
+        {!isMobileVariant && shouldShowTooltip('record') && (
           <FocusTooltip show={true} isFocused={isFocused('record')} />
         )}
       </div>
@@ -417,8 +446,8 @@ export function MainLayout() {
       storageKey={`brutal-notes-tour-completed-${user?.id}`}
     >
       <div className="min-h-[100dvh] bg-neutral-50 font-mono">
-        <div className="w-full h-[100dvh] p-2">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-2 h-full">
+        <div className="w-full h-[100dvh] p-1 sm:p-2">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-1 sm:gap-2 h-full">
             {/* Desktop Sidebar - Hidden on tablet/mobile */}
             <div className="hidden lg:block lg:col-span-1 min-h-0 overflow-visible">
               {renderSidebarPanels()}
@@ -433,10 +462,10 @@ export function MainLayout() {
                 position="left"
                 order={5}
               >
-                <Card className="h-full min-h-0 border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white">
-                  <CardHeader className="border-b-4 border-black bg-neutral-100">
-                    <CardTitle className="text-2xl font-black text-black flex items-center justify-between w-full">
-                      <div className="flex items-center gap-3">
+                <Card className="h-full min-h-0 border-2 sm:border-4 border-black shadow-none bg-white">
+                  <CardHeader className="border-b-2 sm:border-b-4 border-black bg-neutral-100 py-2 sm:py-6">
+                    <CardTitle className="text-lg sm:text-2xl font-black text-black flex items-center justify-between w-full">
+                      <div className="flex items-center gap-2 sm:gap-3">
                         {/* Mobile Hamburger Menu */}
                         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
                           <SheetTrigger asChild>
@@ -455,13 +484,13 @@ export function MainLayout() {
                               <SheetTitle>Navigation Menu</SheetTitle>
                             </VisuallyHidden>
                             <div className="h-full pt-4">
-                              {renderSidebarPanels()}
+                              {renderSidebarPanels(true)}
                             </div>
                           </SheetContent>
                         </Sheet>
                         
-                        <Star24 size={32} color="#000" />
-                        BRUTAL NOTE
+                        <Star24 size={24} className="sm:w-8 sm:h-8" color="#000" />
+                        <span className="hidden sm:inline">BRUTAL NOTE</span>
                       </div>
                       <div className="flex items-center gap-2">
                         {/* Connectivity Status - subtle and contextual */}
@@ -532,7 +561,7 @@ export function MainLayout() {
                       </div>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0 h-[calc(100%-4rem)] relative overflow-hidden min-h-0">
+                  <CardContent className="p-0 h-[calc(100%-3rem)] sm:h-[calc(100%-4rem)] relative overflow-hidden min-h-0">
                            {/* Rich Text Editor */}
                            <div className="h-full max-h-full overflow-hidden">
                              <BrutalEditor 

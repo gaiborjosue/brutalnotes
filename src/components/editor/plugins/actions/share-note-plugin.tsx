@@ -64,7 +64,7 @@ export function ShareNotePlugin() {
       title="Share note via URL"
     >
       <Share className="w-4 h-4" />
-      Share
+      <span className="hidden sm:inline">Share</span>
     </Button>
   )
 }

@@ -140,7 +140,7 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
           className="border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-green-400 hover:bg-green-500 text-black font-black gap-2"
         >
           <Save className="h-4 w-4" />
-          Save File
+          <span className="hidden sm:inline">Save File</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="border-4 border-black shadow-[8px_8px_0px_0px_#000] bg-white max-w-md">
