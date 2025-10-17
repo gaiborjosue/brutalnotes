@@ -49,6 +49,7 @@ import { TableActionMenuPlugin } from "@/components/editor/plugins/table-action-
 import { TableCellResizerPlugin } from "@/components/editor/plugins/table-cell-resizer-plugin"
 import { TableHoverActionsPlugin } from "@/components/editor/plugins/table-hover-actions-plugin"
 import { EquationsPlugin } from "@/components/editor/plugins/equations-plugin"
+import { EmojiTypeaheadPlugin } from "@/components/editor/plugins/emoji-typeahead-plugin"
 import { ContentEditable } from "@/components/editor/editor-ui/content-editable"
 import { ToolbarPlugin } from "@/components/editor/plugins/toolbar/toolbar-plugin"
 import { HistoryToolbarPlugin } from "@/components/editor/plugins/toolbar/history-toolbar-plugin"
@@ -648,9 +649,8 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
         {/* Code Plugins */}
         <CodeHighlightPlugin />
         <CodeActionMenuPlugin anchorElem={contentEditableRef.current} />
-        
+        <EmojiTypeaheadPlugin />
 
-        
         {/* Core plugins */}
         <HistoryPlugin />
         <TabIndentationPlugin />
