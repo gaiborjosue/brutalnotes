@@ -8,6 +8,8 @@ export interface LocalTodo extends Omit<Todo, 'id'> {
   clientId?: string // Changed to string for new client ID format
   text: string
   completed: boolean
+  sourceNoteClientId?: string
+  sourceNoteTitle?: string
   deleted?: boolean // Soft delete flag for sync purposes
   version: number // Version for conflict resolution
   createdAt: Date
@@ -23,7 +25,7 @@ export interface LocalNote extends Omit<Note, 'id'> {
   clientId?: string // Changed to string for new client ID format
   title: string
   content: string // JSON string from Lexical editor
-  path?: string // DEPRECATED: Use generateLogicalPath() instead
+  path?: string // Denormalized hierarchical path used for sync and file navigation
   createdAt: Date
   updatedAt: Date
   syncStatus: SyncStatus // 'pending' | 'synced' | 'error'
@@ -59,6 +61,26 @@ export interface SyncState {
   totalFailed: number
 }
 
+const SYNC_METADATA_FIELDS = new Set([
+  'serverId',
+  'clientId',
+  'serverParentId',
+  'parentClientId',
+  'syncStatus',
+  'needSync',
+  'lastSyncAt',
+  'updatedAt',
+  'version',
+])
+
+function isSyncOnlyMutation(modifications: Record<string, unknown>) {
+  return Object.keys(modifications).every(key => SYNC_METADATA_FIELDS.has(key))
+}
+
+function isServerReconciliation(modifications: Record<string, unknown>) {
+  return modifications.syncStatus === 'synced' && modifications.needSync === false
+}
+
 // Database class extending Dexie
 export class BrutalNotesDB extends Dexie {
   todos!: Table<LocalTodo>
@@ -68,9 +90,16 @@ export class BrutalNotesDB extends Dexie {
 
   constructor() {
     super('BrutalNotesDB')
-    
+
     this.version(2).stores({
       todos: '++id, serverId, clientId, text, completed, deleted, version, createdAt, updatedAt, syncStatus, needSync, lastSyncAt',
+      notes: '++id, serverId, clientId, title, content, path, createdAt, updatedAt, syncStatus, isFolder, parentId, serverParentId, parentClientId, deleted, version, needSync, lastSyncAt',
+      syncQueue: '++id, operation, entityType, entityId, timestamp, retryCount',
+      syncState: '++id, deviceId, lastSyncAt, conflictCount, totalSynced, totalFailed'
+    })
+
+    this.version(3).stores({
+      todos: '++id, serverId, clientId, text, completed, sourceNoteClientId, sourceNoteTitle, deleted, version, createdAt, updatedAt, syncStatus, needSync, lastSyncAt',
       notes: '++id, serverId, clientId, title, content, path, createdAt, updatedAt, syncStatus, isFolder, parentId, serverParentId, parentClientId, deleted, version, needSync, lastSyncAt',
       syncQueue: '++id, operation, entityType, entityId, timestamp, retryCount',
       syncState: '++id, deviceId, lastSyncAt, conflictCount, totalSynced, totalFailed'
@@ -94,16 +123,19 @@ export class BrutalNotesDB extends Dexie {
 
     this.todos.hook('updating', (modifications, _, obj) => {
       const mods = modifications as Record<string, unknown>
+      if (isSyncOnlyMutation(mods) || isServerReconciliation(mods)) {
+        if (mods.syncStatus === 'synced' && mods.needSync === false && mods.lastSyncAt === undefined) {
+          mods.lastSyncAt = new Date()
+        }
+        return
+      }
+
       mods.updatedAt = new Date()
-      // Increment version on updates
       if (obj.version !== undefined) {
         mods.version = obj.version + 1
       }
-      // Mark as needing sync if it was previously synced
-      if (obj.syncStatus === 'synced') {
-        mods.syncStatus = 'pending'
-        mods.needSync = true
-      }
+      mods.syncStatus = 'pending'
+      mods.needSync = true
     })
 
     this.notes.hook('creating', (_, obj) => {
@@ -123,16 +155,19 @@ export class BrutalNotesDB extends Dexie {
 
     this.notes.hook('updating', (modifications, _, obj) => {
       const mods = modifications as Record<string, unknown>
+      if (isSyncOnlyMutation(mods) || isServerReconciliation(mods)) {
+        if (mods.syncStatus === 'synced' && mods.needSync === false && mods.lastSyncAt === undefined) {
+          mods.lastSyncAt = new Date()
+        }
+        return
+      }
+
       mods.updatedAt = new Date()
-      // Increment version on updates
       if (obj.version !== undefined) {
         mods.version = obj.version + 1
       }
-      // Mark as needing sync if it was previously synced
-      if (obj.syncStatus === 'synced') {
-        mods.syncStatus = 'pending'
-        mods.needSync = true
-      }
+      mods.syncStatus = 'pending'
+      mods.needSync = true
     })
   }
 }
@@ -187,12 +222,18 @@ export class IndexedDBService {
     }
   }
 
-  static async addTodo(text: string): Promise<LocalTodo> {
+  static async addTodo(
+    text: string,
+    metadata?: Pick<LocalTodo, 'sourceNoteClientId' | 'sourceNoteTitle'>,
+  ): Promise<LocalTodo> {
     try {
       const todo: Omit<LocalTodo, 'id'> = {
         text,
         completed: false,
+        sourceNoteClientId: metadata?.sourceNoteClientId,
+        sourceNoteTitle: metadata?.sourceNoteTitle,
         deleted: false,
+        version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
         syncStatus: 'pending',
@@ -237,6 +278,32 @@ export class IndexedDBService {
       return updatedTodo
     } catch (error) {
       console.error('Error updating todo in IndexedDB:', error)
+      throw error
+    }
+  }
+
+  static async reconcileTodo(id: number, updates: Partial<LocalTodo>): Promise<LocalTodo> {
+    try {
+      await db.todos.update(id, {
+        ...updates,
+        lastSyncAt:
+          updates.syncStatus === 'synced' && updates.needSync === false
+            ? updates.lastSyncAt ?? new Date()
+            : updates.lastSyncAt
+      })
+
+      const updatedTodo = await db.todos.get(id)
+      if (!updatedTodo) {
+        throw new Error('Failed to retrieve reconciled todo')
+      }
+
+      if (updatedTodo.syncStatus === 'synced') {
+        await this.removeSyncQueueEntriesForEntity('todo', id)
+      }
+
+      return updatedTodo
+    } catch (error) {
+      console.error('Error reconciling todo in IndexedDB:', error)
       throw error
     }
   }
@@ -344,43 +411,84 @@ export class IndexedDBService {
     }
   }
 
+  private static async resolveParentClientId(parentId?: number): Promise<string | undefined> {
+    if (!parentId) {
+      return undefined
+    }
+
+    const parentNote = await this.getNoteById(parentId)
+    if (!parentNote?.clientId) {
+      console.warn(`⚠️ Parent note with ID ${parentId} not found or missing clientId`)
+      return undefined
+    }
+
+    return parentNote.clientId
+  }
+
+  private static async buildCanonicalPath(title: string, parentId?: number): Promise<string> {
+    if (!parentId) {
+      return this.normalizePath(title)
+    }
+
+    const parentNote = await this.getNoteById(parentId)
+    if (!parentNote) {
+      return this.normalizePath(title)
+    }
+
+    const parentPath = parentNote.path ? this.normalizePath(parentNote.path) : this.normalizePath(parentNote.title)
+    return this.normalizePath(`${parentPath}/${title}`)
+  }
+
+  private static async cascadeDescendantPaths(parentId: number, markDirty: boolean): Promise<void> {
+    const children = await db.notes.where('parentId').equals(parentId).toArray()
+
+    for (const child of children) {
+      if (!child.id) {
+        continue
+      }
+
+      const nextPath = await this.buildCanonicalPath(child.title, child.parentId)
+      const childUpdates: Partial<LocalNote> = {
+        path: nextPath,
+        syncStatus: markDirty ? 'pending' : 'synced',
+        needSync: markDirty,
+        lastSyncAt: markDirty ? child.lastSyncAt : new Date(),
+      }
+
+      await db.notes.update(child.id, childUpdates)
+
+      if (markDirty) {
+        await this.addToSyncQueue('update', 'note', child.id, { path: nextPath })
+      } else {
+        await this.removeSyncQueueEntriesForEntity('note', child.id)
+      }
+
+      if (child.isFolder) {
+        await this.cascadeDescendantPaths(child.id, markDirty)
+      }
+    }
+  }
+
   static async addNote(
     title: string,
     content: string,
-    path?: string, // Made optional - will be generated from parent relationships
+    path?: string,
     isFolder = false,
     parentId?: number
   ): Promise<LocalNote> {
     try {
-      // If parentId is provided, resolve it to parentClientId
-      let parentClientId: string | undefined = undefined
-      let generatedPath = title // Default path is just the title
-      
-      if (parentId) {
-        const parentNote = await this.getNoteById(parentId)
-          if (parentNote && parentNote.clientId) {
-            parentClientId = parentNote.clientId
-            
-            // Generate logical path from parent hierarchy
-            if (parentNote.path) {
-              generatedPath = `${parentNote.path}/${title}`
-            } else {
-              generatedPath = `${parentNote.title}/${title}`
-            }
-            
-            console.log(`📝 Created "${title}" in "${parentNote.title}" (clientId: ${parentClientId})`)
-          } else {
-            console.warn(`⚠️ Parent note with ID ${parentId} not found or missing clientId`)
-          }
-      }
+      const parentClientId = await this.resolveParentClientId(parentId)
+      const resolvedPath = parentId
+        ? await this.buildCanonicalPath(title, parentId)
+        : this.normalizePath(path || title)
 
       const note: Omit<LocalNote, 'id'> = {
         title,
         content,
-        path: path || this.normalizePath(generatedPath), // Use provided path or generate from hierarchy
+        path: resolvedPath,
         isFolder,
         parentId,
-        parentClientId, // Now properly set during creation
+        parentClientId,
         deleted: false,
         version: 1,
         createdAt: new Date(),
@@ -409,27 +517,29 @@ export class IndexedDBService {
 
   static async updateNote(id: number, updates: Partial<LocalNote>): Promise<LocalNote> {
     try {
-      const processedUpdates = { ...updates }
-      
-      if (processedUpdates.path) {
-        processedUpdates.path = this.normalizePath(processedUpdates.path)
+      const existingNote = await db.notes.get(id)
+      if (!existingNote) {
+        throw new Error('Note not found')
       }
 
-      // If parentId is being updated, also update parentClientId
+      const processedUpdates: Partial<LocalNote> = { ...updates }
+      const nextParentId =
+        processedUpdates.parentId !== undefined ? processedUpdates.parentId : existingNote.parentId
+      const nextTitle = processedUpdates.title ?? existingNote.title
+      const shouldRebuildPath =
+        processedUpdates.title !== undefined ||
+        processedUpdates.parentId !== undefined ||
+        processedUpdates.path !== undefined
+
       if (processedUpdates.parentId !== undefined) {
-        if (processedUpdates.parentId) {
-          const parentNote = await this.getNoteById(processedUpdates.parentId)
-          if (parentNote && parentNote.clientId) {
-            processedUpdates.parentClientId = parentNote.clientId
-            console.log(`📝 Updated parent relationship: ID ${processedUpdates.parentId} → ${parentNote.clientId}`)
-          } else {
-            console.warn(`⚠️ Parent note with ID ${processedUpdates.parentId} not found or missing clientId`)
-            processedUpdates.parentClientId = undefined
-          }
-        } else {
-          // parentId is being set to undefined/null, so clear parentClientId too
-          processedUpdates.parentClientId = undefined
-        }
+        processedUpdates.parentClientId = await this.resolveParentClientId(processedUpdates.parentId)
+      }
+
+      if (shouldRebuildPath) {
+        processedUpdates.path =
+          nextParentId !== undefined
+            ? await this.buildCanonicalPath(nextTitle, nextParentId)
+            : this.normalizePath(processedUpdates.path || nextTitle)
       }
 
       await db.notes.update(id, {
@@ -446,10 +556,65 @@ export class IndexedDBService {
 
       // Add to sync queue
       await this.addToSyncQueue('update', 'note', id, processedUpdates)
+
+      if (
+        updatedNote.isFolder &&
+        (processedUpdates.title !== undefined || processedUpdates.parentId !== undefined || processedUpdates.path !== undefined)
+      ) {
+        await this.cascadeDescendantPaths(id, true)
+      }
       
       return updatedNote
     } catch (error) {
       console.error('Error updating note in IndexedDB:', error)
+      throw error
+    }
+  }
+
+  static async reconcileNote(id: number, updates: Partial<LocalNote>): Promise<LocalNote> {
+    try {
+      const existingNote = await db.notes.get(id)
+      if (!existingNote) {
+        throw new Error('Note not found')
+      }
+
+      const processedUpdates: Partial<LocalNote> = { ...updates }
+
+      if (processedUpdates.path) {
+        processedUpdates.path = this.normalizePath(processedUpdates.path)
+      }
+
+      if (processedUpdates.parentId !== undefined && processedUpdates.parentClientId === undefined) {
+        processedUpdates.parentClientId = await this.resolveParentClientId(processedUpdates.parentId)
+      }
+
+      await db.notes.update(id, {
+        ...processedUpdates,
+        lastSyncAt:
+          processedUpdates.syncStatus === 'synced' && processedUpdates.needSync === false
+            ? processedUpdates.lastSyncAt ?? new Date()
+            : processedUpdates.lastSyncAt
+      })
+
+      const updatedNote = await db.notes.get(id)
+      if (!updatedNote) {
+        throw new Error('Failed to retrieve reconciled note')
+      }
+
+      if (
+        updatedNote.isFolder &&
+        (processedUpdates.title !== undefined || processedUpdates.parentId !== undefined || processedUpdates.path !== undefined)
+      ) {
+        await this.cascadeDescendantPaths(id, false)
+      }
+
+      if (updatedNote.syncStatus === 'synced') {
+        await this.removeSyncQueueEntriesForEntity('note', id)
+      }
+
+      return updatedNote
+    } catch (error) {
+      console.error('Error reconciling note in IndexedDB:', error)
       throw error
     }
   }
@@ -495,6 +660,8 @@ export class IndexedDBService {
     data?: Partial<LocalTodo | LocalNote>
   ): Promise<void> {
     try {
+      await this.removeSyncQueueEntriesForEntity(entityType, entityId)
+
       const entry: Omit<SyncQueueEntry, 'id'> = {
         operation,
         entityType,
@@ -507,6 +674,22 @@ export class IndexedDBService {
       await db.syncQueue.add(entry)
     } catch (error) {
       console.error('Error adding to sync queue:', error)
+    }
+  }
+
+  static async removeSyncQueueEntriesForEntity(entityType: 'todo' | 'note', entityId: number): Promise<void> {
+    try {
+      const existingEntries = await db.syncQueue.where('entityId').equals(entityId).toArray()
+      const idsToDelete = existingEntries
+        .filter(entry => entry.entityType === entityType && entry.entityId === entityId)
+        .map(entry => entry.id)
+        .filter((id): id is number => id !== undefined)
+
+      if (idsToDelete.length > 0) {
+        await db.syncQueue.bulkDelete(idsToDelete)
+      }
+    } catch (error) {
+      console.error('Error removing sync queue entries for entity:', error)
     }
   }
 
@@ -564,6 +747,8 @@ export class IndexedDBService {
       } else {
         await db.notes.update(id, updates)
       }
+
+      await this.removeSyncQueueEntriesForEntity(entityType, id)
     } catch (error) {
       console.error('Error marking entity as synced:', error)
     }
@@ -593,17 +778,11 @@ export class IndexedDBService {
     notes: LocalNote[]
   }> {
     try {
-      const allTodos = await db.todos.toArray()
-      const allNotes = await db.notes.toArray()
-      
-      console.log('🔄 IndexedDB: Total todos in DB:', allTodos.length)
-      console.log('🔄 IndexedDB: Todos with needSync=true:', allTodos.filter(todo => todo.needSync === true).length)
-      console.log('🔄 IndexedDB: Deleted todos:', allTodos.filter(todo => todo.deleted === true).length)
-      console.log('🔄 IndexedDB: Deleted todos with needSync=true:', allTodos.filter(todo => todo.deleted === true && todo.needSync === true).length)
-      
-      const todos = allTodos.filter(todo => todo.needSync === true)
-      const notes = allNotes.filter(note => note.needSync === true)
-      
+      const [todos, notes] = await Promise.all([
+        db.todos.where('syncStatus').equals('pending').toArray(),
+        db.notes.where('syncStatus').equals('pending').toArray()
+      ])
+
       console.log('🔄 IndexedDB: Returning pending todos:', todos.length, 'notes:', notes.length)
       
       return { todos, notes }
@@ -648,31 +827,76 @@ export class IndexedDBService {
     return path.replace(/^\/+|\/+$/g, '')
   }
 
+  static async reconcileSyncedNoteHierarchy(): Promise<void> {
+    try {
+      const allNotes = await db.notes.toArray()
+      const notesByClientId = new Map(
+        allNotes
+          .filter((note): note is LocalNote & { clientId: string; id: number } =>
+            Boolean(note.clientId && note.id)
+          )
+          .map(note => [note.clientId, note])
+      )
+
+      for (const note of allNotes) {
+        if (!note.id || note.syncStatus === 'pending') {
+          continue
+        }
+
+        const expectedParentId = note.parentClientId
+          ? notesByClientId.get(note.parentClientId)?.id
+          : undefined
+
+        if (note.parentClientId && expectedParentId === undefined) {
+          continue
+        }
+
+        const expectedPath = note.parentClientId
+          ? await this.buildCanonicalPath(note.title, expectedParentId)
+          : this.normalizePath(note.path || note.title)
+
+        if (note.parentId !== expectedParentId || this.normalizePath(note.path || note.title) !== expectedPath) {
+          await this.reconcileNote(note.id, {
+            parentId: expectedParentId,
+            parentClientId: note.parentClientId,
+            path: expectedPath,
+            syncStatus: 'synced',
+            needSync: false,
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Error resolving synced note hierarchy:', error)
+    }
+  }
+
   // ============= BULK OPERATIONS =============
 
   static async bulkUpsertTodos(todos: LocalTodo[]): Promise<void> {
     try {
       await db.transaction('rw', db.todos, async () => {
         for (const todo of todos) {
-          if (todo.serverId) {
-            // Check if exists by serverId
-            const existing = await db.todos.where('serverId').equals(todo.serverId).first()
-            if (existing && existing.id) {
-              // Update existing
-              await db.todos.update(existing.id, {
-                ...todo,
-                id: existing.id, // Keep local ID
-                syncStatus: 'synced',
-                needSync: false
-              })
-            } else {
-              // Create new
-              await db.todos.add({
-                ...todo,
-                syncStatus: 'synced',
-                needSync: false
-              })
-            }
+          const existing =
+            (todo.serverId
+              ? await db.todos.where('serverId').equals(todo.serverId).first()
+              : undefined) ??
+            (todo.clientId
+              ? await db.todos.where('clientId').equals(todo.clientId).first()
+              : undefined)
+
+          if (existing && existing.id) {
+            await db.todos.update(existing.id, {
+              ...todo,
+              id: existing.id,
+              syncStatus: 'synced',
+              needSync: false
+            })
+          } else {
+            await db.todos.add({
+              ...todo,
+              syncStatus: 'synced',
+              needSync: false
+            })
           }
         }
       })
@@ -689,29 +913,32 @@ export class IndexedDBService {
         const processedNotes: Array<LocalNote & { localId: number }> = []
         
         for (const note of notes) {
-          if (note.serverId) {
-            // Check if exists by serverId
-            const existing = await db.notes.where('serverId').equals(note.serverId).first()
-            
-            const noteToSave = {
-              ...note,
-              parentId: undefined, // Will be resolved in second pass
-              syncStatus: 'synced' as const,
-              needSync: false
-            }
-            
-            if (existing && existing.id) {
-              // Update existing
-              await db.notes.update(existing.id, {
-                ...noteToSave,
-                id: existing.id, // Keep local ID
-              })
-              processedNotes.push({ ...note, localId: existing.id })
-            } else {
-              // Create new
-              const newId = await db.notes.add(noteToSave)
-              processedNotes.push({ ...note, localId: newId })
-            }
+          const existing =
+            (note.serverId
+              ? await db.notes.where('serverId').equals(note.serverId).first()
+              : undefined) ??
+            (note.clientId
+              ? await db.notes.where('clientId').equals(note.clientId).first()
+              : undefined)
+
+          const noteToSave = {
+            ...note,
+            parentId: undefined, // Will be resolved in second pass
+            syncStatus: 'synced' as const,
+            needSync: false
+          }
+
+          if (existing && existing.id) {
+            // Update existing
+            await db.notes.update(existing.id, {
+              ...noteToSave,
+              id: existing.id, // Keep local ID
+            })
+            processedNotes.push({ ...note, localId: existing.id })
+          } else {
+            // Create new
+            const newId = await db.notes.add(noteToSave)
+            processedNotes.push({ ...note, localId: newId })
           }
         }
         
@@ -723,7 +950,11 @@ export class IndexedDBService {
             if (parentNote && parentNote.id) {
               // Update with correct parent relationship
               await db.notes.update(note.localId, {
-                parentId: parentNote.id
+                parentId: parentNote.id,
+                parentClientId: note.parentClientId,
+                syncStatus: 'synced',
+                needSync: false,
+                lastSyncAt: new Date()
               })
               console.log(`🔗 Resolved parent for "${note.title}": ${note.parentClientId} → ID ${parentNote.id}`)
             } else {
@@ -732,6 +963,8 @@ export class IndexedDBService {
           }
         }
       })
+
+      await this.reconcileSyncedNoteHierarchy()
     } catch (error) {
       console.error('Error bulk upserting notes:', error)
       throw error
@@ -742,15 +975,35 @@ export class IndexedDBService {
 
   static async clearAll(): Promise<void> {
     try {
-      await db.transaction('rw', [db.todos, db.notes, db.syncQueue], async () => {
+      await db.transaction('rw', [db.todos, db.notes, db.syncQueue, db.syncState], async () => {
         await db.todos.clear()
         await db.notes.clear()
         await db.syncQueue.clear()
+        await db.syncState.clear()
       })
     } catch (error) {
       console.error('Error clearing database:', error)
       throw error
     }
+  }
+
+  static async ensureLocalDataOwnership(userId: string): Promise<boolean> {
+    const ownerKey = 'brutal-notes-local-owner'
+    const currentOwner = localStorage.getItem(ownerKey)
+
+    if (!currentOwner) {
+      localStorage.setItem(ownerKey, userId)
+      return false
+    }
+
+    if (currentOwner === userId) {
+      return false
+    }
+
+    console.warn('🔐 Local data owner changed. Clearing IndexedDB to prevent cross-account data leakage.')
+    await this.clearAll()
+    localStorage.setItem(ownerKey, userId)
+    return true
   }
 
   static async getStats(): Promise<{
@@ -761,16 +1014,13 @@ export class IndexedDBService {
     queueSize: number
   }> {
     try {
-      const [allTodos, allNotes, queueSize] = await Promise.all([
-        db.todos.toArray(),
-        db.notes.toArray(),
+      const [totalTodos, totalNotes, pendingTodos, pendingNotes, queueSize] = await Promise.all([
+        db.todos.count(),
+        db.notes.count(),
+        db.todos.where('syncStatus').equals('pending').count(),
+        db.notes.where('syncStatus').equals('pending').count(),
         db.syncQueue.count()
       ])
-
-      const totalTodos = allTodos.length
-      const totalNotes = allNotes.length
-      const pendingTodos = allTodos.filter(todo => todo.needSync === true).length
-      const pendingNotes = allNotes.filter(note => note.needSync === true).length
 
       return {
         totalTodos,
@@ -787,6 +1037,37 @@ export class IndexedDBService {
         pendingTodos: 0,
         pendingNotes: 0,
         queueSize: 0
+      }
+    }
+  }
+
+  static async getSyncCounts(): Promise<{
+    pendingTodos: number
+    pendingNotes: number
+    errorTodos: number
+    errorNotes: number
+  }> {
+    try {
+      const [pendingTodos, pendingNotes, errorTodos, errorNotes] = await Promise.all([
+        db.todos.where('syncStatus').equals('pending').count(),
+        db.notes.where('syncStatus').equals('pending').count(),
+        db.todos.where('syncStatus').equals('error').count(),
+        db.notes.where('syncStatus').equals('error').count(),
+      ])
+
+      return {
+        pendingTodos,
+        pendingNotes,
+        errorTodos,
+        errorNotes,
+      }
+    } catch (error) {
+      console.error('Error getting sync counts:', error)
+      return {
+        pendingTodos: 0,
+        pendingNotes: 0,
+        errorTodos: 0,
+        errorNotes: 0,
       }
     }
   }

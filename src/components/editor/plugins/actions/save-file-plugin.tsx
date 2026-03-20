@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Save, FileText } from "lucide-react"
 import { useNotes } from "@/hooks"
+import { showErrorToast, showSuccessToast } from "@/lib/notifications"
 
 interface SaveFilePluginProps {
   onFileSaved?: () => void
@@ -60,6 +61,7 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
       // Temp folder should always exist after database initialization
       if (!tempFolderId) {
         console.error('❌ Temp folder not found - database initialization may have failed')
+        showErrorToast("Save failed", "Temp folder is unavailable.")
         setSaving(false)
         return
       }
@@ -97,7 +99,7 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
       }
 
       if (result.success) {
-        console.log('🔥 File saved successfully:', noteTitle)
+        showSuccessToast("File saved")
         setIsOpen(false)
         setFileName("")
         onFileSaved?.() // Refresh file tree
@@ -116,11 +118,11 @@ export function SaveFilePlugin({ onFileSaved, currentDraftFileId, onCurrentFileC
         )
       } else {
         console.error('❌ Failed to save file')
-        alert('Failed to save file. Please try again.')
+        showErrorToast("Save failed", "Please try again.")
       }
     } catch (error) {
       console.error('❌ Error saving file:', error)
-      alert('Error saving file. Please try again.')
+      showErrorToast("Save failed", "Please try again.")
     } finally {
       setSaving(false)
     }

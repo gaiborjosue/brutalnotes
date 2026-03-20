@@ -1,4 +1,4 @@
-import { IndexedDBService, type LocalTodo, type LocalNote, db } from './indexedDBService'
+import { IndexedDBService, type LocalTodo, type LocalNote } from './indexedDBService'
 import { TodoService, NoteService } from '../lib/database-service'
 import { supabase } from '../lib/supabase'
 
@@ -20,6 +20,15 @@ export class SyncService {
    * OFFLINE-FIRST: Push local changes first, then pull and resolve conflicts
    */
   static async sync(): Promise<SyncResult> {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return {
+        success: false,
+        error: 'Device is offline',
+        processed: 0,
+        failed: 0
+      }
+    }
+
     if (this.syncInProgress) {
       console.log('SyncService: Sync already in progress, skipping...')
       return {
@@ -119,6 +128,7 @@ export class SyncService {
       
       // Process notes
       await this.mergeServerData('note', serverNotes as unknown as Array<Record<string, unknown>>, localNotes)
+      await IndexedDBService.reconcileSyncedNoteHierarchy()
 
       console.log(`SyncService: Successfully pulled ${serverTodos.length} todos and ${serverNotes.length} notes from server`)
 
@@ -136,12 +146,17 @@ export class SyncService {
     serverItems: Array<Record<string, unknown>>,
     localItems: Array<LocalTodo | LocalNote>
   ): Promise<void> {
+    const orderedServerItems =
+      entityType === 'note'
+        ? this.sortServerNotesForMerge(serverItems)
+        : serverItems
     const serverItemsMap = new Map()
-    const localItemsMap = new Map()
+    const localItemsByServerId = new Map<string, LocalTodo | LocalNote>()
+    const localItemsByClientId = new Map<string, LocalTodo | LocalNote>()
 
     // Create maps for efficient lookup
-    serverItems.forEach(item => {
-      const id = (item.serverId as string) || (item.id as string)
+    orderedServerItems.forEach(item => {
+      const id = this.getServerItemId(item)
       if (id) {
         serverItemsMap.set(id, item)
       }
@@ -149,14 +164,20 @@ export class SyncService {
 
     localItems.forEach(item => {
       if (item.serverId) {
-        localItemsMap.set(item.serverId, item)
+        localItemsByServerId.set(item.serverId, item)
+      }
+      if (item.clientId) {
+        localItemsByClientId.set(item.clientId, item)
       }
     })
 
     // Process server items
-    for (const serverItem of serverItems) {
-      const serverId = (serverItem.serverId as string) || (serverItem.id as string)
-      const localItem = localItemsMap.get(serverId)
+    for (const serverItem of orderedServerItems) {
+      const serverId = this.getServerItemId(serverItem)
+      const clientId = this.getServerItemClientId(serverItem)
+      const localItem =
+        (serverId ? localItemsByServerId.get(serverId) : undefined) ??
+        (clientId ? localItemsByClientId.get(clientId) : undefined)
 
       if (!localItem) {
         // New item from server - add to local
@@ -189,27 +210,93 @@ export class SyncService {
           // Item was deleted on server and no local changes - remove locally
           if (localItem.id) {
             if (entityType === 'todo') {
-              await IndexedDBService.deleteTodo(localItem.id)
+              await IndexedDBService.reconcileTodo(localItem.id, {
+                deleted: true,
+                syncStatus: 'synced',
+                needSync: false
+              })
             } else {
-              await IndexedDBService.deleteNote(localItem.id)
+              await IndexedDBService.reconcileNote(localItem.id, {
+                deleted: true,
+                syncStatus: 'synced',
+                needSync: false
+              })
             }
           }
         }
         // If item has pending changes, we'll let the push handle it
       }
     }
-  }  /**
+  }
+
+  private static getServerItemId(serverItem: Record<string, unknown>): string | undefined {
+    return ((serverItem.serverId as string) || (serverItem.id as string)) || undefined
+  }
+
+  private static getServerItemClientId(serverItem: Record<string, unknown>): string | undefined {
+    return (serverItem.clientId as string) || undefined
+  }
+
+  private static sortServerNotesForMerge(serverItems: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    const noteByClientId = new Map<string, Record<string, unknown>>()
+    const ordered: Array<Record<string, unknown>> = []
+    const visited = new Set<string>()
+
+    serverItems.forEach(item => {
+      const clientId = this.getServerItemClientId(item)
+      if (clientId) {
+        noteByClientId.set(clientId, item)
+      }
+    })
+
+    const visit = (item: Record<string, unknown>) => {
+      const clientId = this.getServerItemClientId(item)
+      if (clientId && visited.has(clientId)) {
+        return
+      }
+
+      const parentClientId = item.parentClientId as string | undefined
+      if (parentClientId) {
+        const parent = noteByClientId.get(parentClientId)
+        if (parent) {
+          visit(parent)
+        }
+      }
+
+      if (clientId) {
+        visited.add(clientId)
+      }
+
+      if (!ordered.includes(item)) {
+        ordered.push(item)
+      }
+    }
+
+    const foldersFirst = [...serverItems].sort((a, b) => {
+      if ((a.isFolder as boolean) === (b.isFolder as boolean)) {
+        return 0
+      }
+
+      return (a.isFolder as boolean) ? -1 : 1
+    })
+
+    foldersFirst.forEach(visit)
+    return ordered
+  }
+
+  /**
    * Add server item to local database
    */
   private static async addServerItemToLocal(entityType: 'todo' | 'note', serverItem: Record<string, unknown>): Promise<void> {
     try {
       if (entityType === 'todo') {
         const localTodo: LocalTodo = {
-          serverId: (serverItem.serverId as string) || (serverItem.id as string),
-          clientId: (serverItem.clientId as number) || (serverItem.id as number),
+          serverId: this.getServerItemId(serverItem),
+          clientId: this.getServerItemClientId(serverItem) || this.getServerItemId(serverItem),
           text: serverItem.text as string,
           completed: serverItem.completed as boolean,
           deleted: (serverItem.deleted as boolean) || false,
+          version: (serverItem.version as number) || 1,
           createdAt: new Date(serverItem.createdAt as string),
           updatedAt: new Date(serverItem.updatedAt as string),
           syncStatus: 'synced',
@@ -232,8 +319,8 @@ export class SyncService {
         }
         
         const localNote: LocalNote = {
-          serverId: (serverItem.serverId as string) || (serverItem.id as string),
-          clientId: (serverItem.clientId as string) || (serverItem.id as string),
+          serverId: this.getServerItemId(serverItem),
+          clientId: this.getServerItemClientId(serverItem) || this.getServerItemId(serverItem),
           title: serverItem.title as string,
           content: serverItem.content as string,
           path: serverItem.path as string,
@@ -248,22 +335,7 @@ export class SyncService {
           syncStatus: 'synced',
           needSync: false
         }
-        // Don't use bulkUpsertNotes for single items during individual processing
-        // The bulk upsert handles parent resolution, but here we need immediate resolution
-        const noteId = await db.notes.add({
-          ...localNote,
-          syncStatus: 'synced',
-          needSync: false
-        })
-        
-        // Immediately resolve parent relationship if needed
-        if (localNote.parentClientId) {
-          const parentNote = await IndexedDBService.getNoteByMixedClientId(localNote.parentClientId)
-          if (parentNote && parentNote.id && noteId) {
-            await db.notes.update(noteId, { parentId: parentNote.id })
-            console.log(`🔗 Immediately resolved parent for ${localNote.title}: clientId ${localNote.parentClientId} -> local ID ${parentNote.id}`)
-          }
-        }
+        await IndexedDBService.bulkUpsertNotes([localNote])
       }
     } catch (error) {
       console.error(`SyncService: Error adding server ${entityType} to local:`, error)
@@ -276,10 +348,13 @@ export class SyncService {
   private static async updateLocalItemFromServer(entityType: 'todo' | 'note', localId: number, serverItem: Record<string, unknown>): Promise<void> {
     try {
       if (entityType === 'todo') {
-        await IndexedDBService.updateTodo(localId, {
+        await IndexedDBService.reconcileTodo(localId, {
+          serverId: this.getServerItemId(serverItem),
+          clientId: this.getServerItemClientId(serverItem) || this.getServerItemId(serverItem),
           text: serverItem.text as string,
           completed: serverItem.completed as boolean,
           deleted: (serverItem.deleted as boolean) || false,
+          version: (serverItem.version as number) || 1,
           updatedAt: new Date(serverItem.updatedAt as string),
           syncStatus: 'synced',
           needSync: false
@@ -295,7 +370,9 @@ export class SyncService {
           }
         }
         
-        await IndexedDBService.updateNote(localId, {
+        await IndexedDBService.reconcileNote(localId, {
+          serverId: this.getServerItemId(serverItem),
+          clientId: this.getServerItemClientId(serverItem) || this.getServerItemId(serverItem),
           title: serverItem.title as string,
           content: serverItem.content as string,
           path: serverItem.path as string,
@@ -346,8 +423,6 @@ export class SyncService {
   ): Promise<void> {
     console.log(`SyncService: Resolving conflict for ${entityType} ${localItem.id}`)
     
-    const localVersion = localItem.version || 1
-    const serverVersion = (serverItem.version as number) || 1
     const serverUpdatedAt = new Date(serverItem.updatedAt as string)
     const localUpdatedAt = new Date(localItem.updatedAt)
 
@@ -511,10 +586,10 @@ export class SyncService {
         }
       }
       // Mark as synced regardless of whether server deletion succeeded
-      await IndexedDBService.updateTodo(todo.id, {
+      await IndexedDBService.reconcileTodo(todo.id, {
         syncStatus: 'synced',
         needSync: false,
-        updatedAt: new Date()
+        lastSyncAt: new Date()
       })
     } else if (todo.serverId) {
       // Update existing todo - make sure we have clientId
@@ -526,10 +601,10 @@ export class SyncService {
         completed: todo.completed
       })
       if (result.success) {
-        await IndexedDBService.updateTodo(todo.id, {
+        await IndexedDBService.reconcileTodo(todo.id, {
           syncStatus: 'synced',
           needSync: false,
-          updatedAt: new Date()
+          lastSyncAt: new Date()
         })
       } else {
         throw new Error(result.error || 'Failed to update todo')
@@ -539,12 +614,13 @@ export class SyncService {
       const result = await TodoService.addTodo(todo.text)
       if (result.success && result.data) {
         // Update local todo with both serverId and clientId from server
-        await IndexedDBService.updateTodo(todo.id, {
+        await IndexedDBService.reconcileTodo(todo.id, {
           serverId: result.data.serverId,
           clientId: result.data.clientId,
+          version: result.data.version,
           syncStatus: 'synced',
           needSync: false,
-          updatedAt: new Date()
+          lastSyncAt: new Date()
         })
       } else {
         throw new Error(result.error || 'Failed to create todo')
@@ -571,10 +647,10 @@ export class SyncService {
         }
       }
       // Mark as synced regardless of whether server deletion succeeded
-      await IndexedDBService.updateNote(note.id, {
+      await IndexedDBService.reconcileNote(note.id, {
         syncStatus: 'synced',
         needSync: false,
-        updatedAt: new Date()
+        lastSyncAt: new Date()
       })
     } else if (note.serverId) {
       // Update existing note - make sure we have clientId
@@ -589,10 +665,10 @@ export class SyncService {
         parentId: note.parentClientId  // ✅ Pass parentClientId as parentId (confusing naming in API)
       })
       if (result.success) {
-        await IndexedDBService.updateNote(note.id, {
+        await IndexedDBService.reconcileNote(note.id, {
           syncStatus: 'synced',
           needSync: false,
-          updatedAt: new Date()
+          lastSyncAt: new Date()
         })
       } else {
         throw new Error(result.error || 'Failed to update note')
@@ -625,12 +701,13 @@ export class SyncService {
       if (result.success && result.data) {
         console.log(`SyncService: Successfully created note on server with serverId: ${result.data.serverId}`)
         // Update local note with both serverId and clientId from server
-        await IndexedDBService.updateNote(note.id, {
+        await IndexedDBService.reconcileNote(note.id, {
           serverId: result.data.serverId,
           clientId: result.data.clientId,
+          version: result.data.version,
           syncStatus: 'synced',
           needSync: false,
-          updatedAt: new Date()
+          lastSyncAt: new Date()
         })
       } else {
         console.error(`SyncService: Failed to create note on server:`, result.error)
@@ -695,18 +772,17 @@ export class SyncService {
     pendingItems: number
     failedItems: number
   }> {
-    const stats = await IndexedDBService.getStats()
-    const pendingItems = stats.pendingTodos + stats.pendingNotes
+    const [syncCounts, syncState] = await Promise.all([
+      IndexedDBService.getSyncCounts(),
+      IndexedDBService.getSyncState()
+    ])
 
-    // Count failed items (items with sync status 'error')
-    const todos = await IndexedDBService.getAllTodos()
-    const notes = await IndexedDBService.getAllNotes()
-    const failedItems = todos.filter(t => t.syncStatus === 'error').length + 
-                       notes.filter(n => n.syncStatus === 'error').length
+    const pendingItems = syncCounts.pendingTodos + syncCounts.pendingNotes
+    const failedItems = syncCounts.errorTodos + syncCounts.errorNotes
 
     return {
       inProgress: this.syncInProgress,
-      lastSyncTime: this.lastSyncTime,
+      lastSyncTime: this.lastSyncTime ?? syncState?.lastSyncAt ?? null,
       pendingItems,
       failedItems
     }
@@ -724,7 +800,7 @@ export class SyncService {
 
     for (const todo of todos) {
       if (todo.syncStatus === 'error' && todo.id) {
-        await IndexedDBService.updateTodo(todo.id, {
+        await IndexedDBService.reconcileTodo(todo.id, {
           syncStatus: 'pending',
           needSync: true
         })
@@ -733,7 +809,7 @@ export class SyncService {
 
     for (const note of notes) {
       if (note.syncStatus === 'error' && note.id) {
-        await IndexedDBService.updateNote(note.id, {
+        await IndexedDBService.reconcileNote(note.id, {
           syncStatus: 'pending',
           needSync: true
         })

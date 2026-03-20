@@ -1,91 +1,116 @@
 /**
  * Global Sync Coordinator
- * Prevents duplicate initial sync calls when multiple hooks initialize
+ * Prevents duplicate startup sync calls when multiple hooks initialize
  */
 
 import { DataSeedingService } from './dataSeedingService'
+import { IndexedDBService } from './indexedDBService'
+import { SyncService } from './syncService'
+
+export interface StartupSyncResult {
+  success: boolean
+  totalTodos: number
+  totalNotes: number
+  error?: string
+}
 
 export class GlobalSyncCoordinator {
-  private static isInitialSyncInProgress = false
-  private static isInitialSyncCompleted = false
-  private static initialSyncPromise: Promise<any> | null = null
+  private static activeUserId: string | null = null
+  private static isStartupSyncInProgress = false
+  private static isStartupSyncCompleted = false
+  private static startupSyncPromise: Promise<StartupSyncResult> | null = null
 
   /**
-   * Perform initial sync only once, regardless of how many hooks call it
+   * Perform startup sync only once per authenticated user, regardless of how many hooks call it.
+   * When local data already exists, this still reconciles with the server so startup is not seed-only.
    */
-  static async performInitialSyncOnce(): Promise<{
-    success: boolean
-    totalTodos: number
-    totalNotes: number
-    error?: string
-  }> {
-    // If already completed, return success immediately
-    if (this.isInitialSyncCompleted) {
-      // Reduced logging to prevent spam during development
-      return { success: true, totalTodos: 0, totalNotes: 0 }
+  static async performStartupSyncOnce(userId: string): Promise<StartupSyncResult> {
+    if (this.activeUserId !== userId) {
+      this.reset(userId)
+    }
+
+    // If already completed for this user, return current local totals.
+    if (this.isStartupSyncCompleted) {
+      const stats = await IndexedDBService.getStats()
+      return {
+        success: true,
+        totalTodos: stats.totalTodos,
+        totalNotes: stats.totalNotes,
+      }
     }
 
     // If in progress, wait for the existing promise
-    if (this.isInitialSyncInProgress && this.initialSyncPromise) {
-      // Reduced logging to prevent spam during development  
-      return await this.initialSyncPromise
+    if (this.isStartupSyncInProgress && this.startupSyncPromise) {
+      return await this.startupSyncPromise
     }
 
-    // Start new initial sync
-    console.log('GlobalSyncCoordinator: Starting coordinated initial sync...')
-    this.isInitialSyncInProgress = true
-    
-    this.initialSyncPromise = this.doInitialSync()
-    
+    // Start new startup sync
+    console.log('GlobalSyncCoordinator: Starting coordinated startup sync...')
+    this.activeUserId = userId
+    this.isStartupSyncInProgress = true
+    this.startupSyncPromise = this.doStartupSync()
+
     try {
-      const result = await this.initialSyncPromise
-      this.isInitialSyncCompleted = true
-      console.log('GlobalSyncCoordinator: Initial sync completed successfully')
+      const result = await this.startupSyncPromise
+      this.isStartupSyncCompleted = result.success
+      if (result.success) {
+        console.log('GlobalSyncCoordinator: Startup sync completed successfully')
+      } else {
+        console.warn('GlobalSyncCoordinator: Startup sync finished with errors')
+      }
       return result
     } catch (error) {
-      console.error('GlobalSyncCoordinator: Initial sync failed:', error)
+      console.error('GlobalSyncCoordinator: Startup sync failed:', error)
       throw error
     } finally {
-      this.isInitialSyncInProgress = false
-      this.initialSyncPromise = null
+      this.isStartupSyncInProgress = false
+      this.startupSyncPromise = null
     }
   }
 
-  private static async doInitialSync() {
-    // Check if initial sync is actually needed
+  private static async doStartupSync(): Promise<StartupSyncResult> {
     const needsSync = await DataSeedingService.isInitialSyncNeeded()
-    
+
     if (needsSync) {
-      console.log('GlobalSyncCoordinator: Initial sync needed, performing...')
+      console.log('GlobalSyncCoordinator: Initial seed needed, performing...')
       return await DataSeedingService.performInitialSync()
-    } else {
-      console.log('GlobalSyncCoordinator: Initial sync not needed')
-      return { success: true, totalTodos: 0, totalNotes: 0 }
+    }
+
+    console.log('GlobalSyncCoordinator: Local data exists, reconciling with server...')
+    const syncResult = await SyncService.sync()
+    const stats = await IndexedDBService.getStats()
+
+    return {
+      success: syncResult.success,
+      totalTodos: stats.totalTodos,
+      totalNotes: stats.totalNotes,
+      error: syncResult.error,
     }
   }
 
   /**
-   * Reset sync state (for testing or re-initialization)
+   * Reset startup sync state (for testing or re-initialization)
    */
-  static reset() {
-    this.isInitialSyncCompleted = false
-    this.isInitialSyncInProgress = false
-    this.initialSyncPromise = null
+  static reset(userId: string | null = null) {
+    this.activeUserId = userId
+    this.isStartupSyncCompleted = false
+    this.isStartupSyncInProgress = false
+    this.startupSyncPromise = null
     console.log('GlobalSyncCoordinator: Reset sync state')
   }
 
   /**
-   * Check if initial sync has been completed
+   * Check if startup sync has been completed
    */
   static isCompleted(): boolean {
-    return this.isInitialSyncCompleted
+    return this.isStartupSyncCompleted
   }
 
   /**
-   * Check if initial sync is currently in progress
+   * Check if startup sync is currently in progress
    */
   static isInProgress(): boolean {
-    return this.isInitialSyncInProgress
+    return this.isStartupSyncInProgress
   }
 }
 

@@ -8,6 +8,7 @@ import Star8 from "@/components/stars/s8"
 import { BrutalAudioLevelMeter } from "@/components/ui/brutal-audio-level-meter"
 import { geminiModel, blobToGenerativePart, normalizeAudioMimeType } from "@/lib/firebase"
 import { FirebaseError } from "firebase/app"
+import { showErrorToast, showWarningToast } from "@/lib/notifications"
 
 interface RecordingPanelProps {
   onInsertContent?: (content: string) => void
@@ -24,8 +25,7 @@ export function RecordingPanel({ onInsertContent, collapsed = false, onToggle, c
   const [hasRecording, setHasRecording] = useState(false)
   const [isConverting, setIsConverting] = useState(false)
   const [noteLanguage, setNoteLanguage] = useState<"en" | "es">("en")
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [generatedNotes, setGeneratedNotes] = useState<string | null>(null)
+  const [, setGeneratedNotes] = useState<string | null>(null)
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -121,7 +121,7 @@ export function RecordingPanel({ onInsertContent, collapsed = false, onToggle, c
       
     } catch (error) {
       console.error('Error starting recording:', error)
-      alert('Could not access microphone. Please check permissions.')
+      showErrorToast('Microphone unavailable', 'Please check browser permissions.')
     }
   }
 
@@ -157,6 +157,7 @@ export function RecordingPanel({ onInsertContent, collapsed = false, onToggle, c
   const convertToNotes = async () => {
     if (!audioBlob) {
       console.error('No audio recording available to convert')
+      showWarningToast('No audio available', 'Record or upload audio first.')
       return
     }
 
@@ -232,9 +233,6 @@ Format the output as clean markdown that captures the essence of the lecture.`
           const headerTitle = noteLanguage === "es" ? "## 📝 Notas Generadas" : "## 📝 Generated Lecture Notes"
           const formattedNotes = `${headerTitle}\n\n${trimmedText}\n\n---\n\n`
           onInsertContent(formattedNotes)
-          console.log('Generated notes inserted into editor:', trimmedText.substring(0, 100) + '...')
-        } else {
-          console.log('Generated notes:', trimmedText)
         }
       } else {
         throw new Error('No text generated from audio')
@@ -242,10 +240,11 @@ Format the output as clean markdown that captures the essence of the lecture.`
       
     } catch (error) {
       console.error('Error converting audio to notes:', error)
-      if (error instanceof FirebaseError && error.customData) {
-        console.error('Firebase AI error details:', error.customData)
-      }
-      alert('Failed to convert audio to notes. Please try again.')
+      const description =
+        error instanceof FirebaseError && typeof error.message === 'string'
+          ? error.message
+          : 'Please try again.'
+      showErrorToast('Failed to convert audio to notes', description)
     } finally {
       setIsConverting(false)
     }
@@ -280,16 +279,14 @@ Format the output as clean markdown that captures the essence of the lecture.`
                        file.type === '' && /\.(mp3|wav|ogg|m4a|aac|flac|opus|webm)$/i.test(file.name)
     
     if (!isAudioFile) {
-      alert('Please select an audio file (mp3, wav, ogg, m4a, aac, flac, opus, webm).')
+      showWarningToast('Unsupported file', 'Please select an audio file (mp3, wav, ogg, m4a, aac, flac, opus, webm).')
       return
     }
-
-    console.log('Uploaded file:', file.name, 'MIME type:', file.type, 'Size:', file.size)
 
     // Check file size (limit to ~100MB)
     const maxSize = 100 * 1024 * 1024 // 100MB in bytes
     if (file.size > maxSize) {
-      alert('File size too large. Please select a file smaller than 100MB.')
+      showWarningToast('File too large', 'Please select a file smaller than 100MB.')
       return
     }
 
@@ -310,13 +307,11 @@ Format the output as clean markdown that captures the essence of the lecture.`
     const url = URL.createObjectURL(normalizedBlob)
     setAudioUrl(url)
     setHasRecording(true)
-    
+
     // Calculate approximate duration from file size (rough estimate)
     // This is just for display purposes, actual duration would need audio analysis
     const estimatedDuration = Math.min(normalizedBlob.size / 32000, MAX_RECORDING_TIME) // Rough estimate
     setRecordingTime(Math.floor(estimatedDuration))
-
-    console.log('Audio file uploaded:', file.name, 'Size:', (normalizedBlob.size / 1024 / 1024).toFixed(2) + 'MB', 'MIME:', normalizedMimeType)
   }
 
   const triggerFileUpload = () => {
@@ -340,8 +335,8 @@ Format the output as clean markdown that captures the essence of the lecture.`
   }
 
   const cardClasses = collapsed
-    ? "border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
-    : "h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
+    ? "gap-0 pt-6 pb-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
+    : "h-full min-h-0 gap-0 pt-6 pb-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
 
   return (
     <Card
@@ -377,7 +372,7 @@ Format the output as clean markdown that captures the essence of the lecture.`
             <Popover>
               <PopoverTrigger asChild>
                 <Button
-                  variant="ghost"
+                  variant="neutral"
                   className="h-8 w-8 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white text-black p-0 flex items-center justify-center"
                   aria-label="Change note language"
                   onClick={(event) => event.stopPropagation()}

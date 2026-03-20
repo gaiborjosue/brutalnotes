@@ -22,7 +22,6 @@ Created by me and [@dariadobrolinski](https://github.com/dariadobrolinski) for t
 ### 🤖 Chrome AI built-in powered assistance & utilities
 
 - **AI content detection** - Analyze content and get a percentage of AI-detected text.
-- **Markdown proofreading** - Grammar and style suggestions
 - **Smart citations** - Automatic citation detection and formatting from a URL.
 - **Content summarization**- AI-powered summarization assistance for a note.
 

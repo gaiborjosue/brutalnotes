@@ -1,5 +1,5 @@
 import type { JSX } from "react"
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import { $isLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
 import {
@@ -22,12 +22,60 @@ import {
   ClipboardType,
   Copy,
   Link2Off,
+  ListTodo,
   Scissors,
   Trash2,
 } from "lucide-react"
+import { useTodos } from "@/hooks"
+import { showErrorToast, showSuccessToast, showWarningToast } from "@/lib/notifications"
 
-export function ContextMenuPlugin(): JSX.Element {
+interface ContextMenuPluginProps {
+  currentNoteClientId?: string
+  currentNoteTitle?: string
+}
+
+function getDisplayNoteTitle(title?: string): string | undefined {
+  if (!title) {
+    return undefined
+  }
+
+  return title.endsWith(".lexical") ? title.slice(0, -".lexical".length) : title
+}
+
+export function ContextMenuPlugin({
+  currentNoteClientId,
+  currentNoteTitle,
+}: ContextMenuPluginProps): JSX.Element {
   const [editor] = useLexicalComposerContext()
+  const { addTodo } = useTodos()
+
+  const handleAddSelectionToTodos = useCallback(() => {
+    let selectionText = ""
+
+    editor.getEditorState().read(() => {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection) && !selection.isCollapsed()) {
+        selectionText = selection.getTextContent().replace(/\s+/g, " ").trim()
+      }
+    })
+
+    if (!selectionText) {
+      showWarningToast("Select text first", "Highlight some text in the note, then add it to Todos.")
+      return
+    }
+
+    void addTodo(selectionText, {
+      sourceNoteClientId: currentNoteClientId,
+      sourceNoteTitle: getDisplayNoteTitle(currentNoteTitle),
+    }).then((createdTodo) => {
+      if (!createdTodo) {
+        showErrorToast("Todo not added", "The selected text could not be saved as a todo.")
+        return
+      }
+
+      showSuccessToast("Added to Todos")
+    })
+  }, [addTodo, currentNoteClientId, currentNoteTitle, editor])
 
   const items = useMemo(() => {
     return [
@@ -56,9 +104,16 @@ export function ContextMenuPlugin(): JSX.Element {
         disabled: false,
         icon: <Copy className="h-4 w-4" />,
       }),
+      new NodeContextMenuOption(`Add To Todos`, {
+        $onSelect: () => {
+          handleAddSelectionToTodos()
+        },
+        disabled: false,
+        icon: <ListTodo className="h-4 w-4" />,
+      }),
       new NodeContextMenuOption(`Paste`, {
         $onSelect: () => {
-          navigator.clipboard.read().then(async function (...args) {
+          void navigator.clipboard.read().then(async () => {
             const data = new DataTransfer()
 
             const readClipboardItems = await navigator.clipboard.read()
@@ -69,7 +124,7 @@ export function ContextMenuPlugin(): JSX.Element {
               name: "clipboard-read",
             })
             if (permission.state === "denied") {
-              alert("Not allowed to paste from clipboard.")
+              showErrorToast("Clipboard access denied", "Allow clipboard access to paste.")
               return
             }
 
@@ -92,6 +147,8 @@ export function ContextMenuPlugin(): JSX.Element {
             })
 
             editor.dispatchCommand(PASTE_COMMAND, event)
+          }).catch(() => {
+            showErrorToast("Clipboard access failed", "The browser refused to read the clipboard.")
           })
         },
         disabled: false,
@@ -99,14 +156,14 @@ export function ContextMenuPlugin(): JSX.Element {
       }),
       new NodeContextMenuOption(`Paste as Plain Text`, {
         $onSelect: () => {
-          navigator.clipboard.read().then(async function (...args) {
+          void navigator.clipboard.read().then(async () => {
             const permission = await navigator.permissions.query({
               // @ts-expect-error These types are incorrect.
               name: "clipboard-read",
             })
 
             if (permission.state === "denied") {
-              alert("Not allowed to paste from clipboard.")
+              showErrorToast("Clipboard access denied", "Allow clipboard access to paste.")
               return
             }
 
@@ -118,6 +175,8 @@ export function ContextMenuPlugin(): JSX.Element {
               clipboardData: data,
             })
             editor.dispatchCommand(PASTE_COMMAND, event)
+          }).catch(() => {
+            showErrorToast("Clipboard access failed", "The browser refused to read the clipboard.")
           })
         },
         disabled: false,
@@ -145,7 +204,7 @@ export function ContextMenuPlugin(): JSX.Element {
         icon: <Trash2 className="h-4 w-4" />,
       }),
     ]
-  }, [editor])
+  }, [editor, handleAddSelectionToTodos])
 
   return (
     <NodeContextMenuPlugin

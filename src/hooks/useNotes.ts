@@ -7,6 +7,21 @@ import { useAuth } from '../contexts/AuthContext'
 import { buildFileTreeFromNotes } from '../lib/database-service'
 import type { FileNode } from '../lib/types'
 
+const NOTES_CHANGED_EVENT = 'brutalnotes:notes-changed'
+const NOTES_CHANGED_CHANNEL = 'brutalnotes-notes'
+
+function emitNotesChanged(source: string): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(NOTES_CHANGED_EVENT, { detail: { source } }))
+  }
+
+  if (typeof BroadcastChannel !== 'undefined') {
+    const channel = new BroadcastChannel(NOTES_CHANGED_CHANNEL)
+    channel.postMessage({ source })
+    channel.close()
+  }
+}
+
 /**
  * Offline-first hook for managing notes
  * Replaces ElectricSQL useShape for notes with local IndexedDB storage
@@ -20,6 +35,11 @@ export function useNotes() {
   
   const { isOnline, isOnlineAfterOffline } = useOnlineStatus()
   const { user, loading: authLoading } = useAuth()
+  const instanceIdRef = useRef(
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `notes-${Math.random().toString(36).slice(2)}`
+  )
 
   // Load notes from IndexedDB
   const loadNotes = useCallback(async () => {
@@ -47,6 +67,7 @@ export function useNotes() {
         // Reload notes after successful sync
         await loadNotes()
         setLastSyncTime(new Date())
+        emitNotesChanged(instanceIdRef.current)
       } else {
         setError(result.error || 'Sync failed')
       }
@@ -68,14 +89,19 @@ export function useNotes() {
     const initializeData = async () => {
       try {
         setIsInitialLoading(true)
+
+        const ownerChanged = await IndexedDBService.ensureLocalDataOwnership(user.id)
+        if (ownerChanged) {
+          GlobalSyncCoordinator.reset(user.id)
+        }
         
-        // Use global sync coordinator to prevent duplicate initial syncs
+        // Use global sync coordinator to prevent duplicate startup syncs.
         if (isOnline) {
-          console.log('useNotes: Requesting coordinated initial sync...', { user: user?.id?.substring(0, 8) })
-          const seedResult = await GlobalSyncCoordinator.performInitialSyncOnce()
+          console.log('useNotes: Requesting coordinated startup sync...', { user: user.id.substring(0, 8) })
+          const seedResult = await GlobalSyncCoordinator.performStartupSyncOnce(user.id)
           if (!seedResult.success) {
-            console.error('Initial sync failed:', seedResult.error)
-            setError(`Initial sync failed: ${seedResult.error}`)
+            console.error('Startup sync failed:', seedResult.error)
+            setError(`Startup sync failed: ${seedResult.error}`)
           }
         }
         
@@ -101,6 +127,43 @@ export function useNotes() {
     }
   }, [isOnlineAfterOffline, user, authLoading, handleSync])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const handleNotesChanged = (event: Event) => {
+      const source = (event as CustomEvent<{ source?: string }>).detail?.source
+      if (source === instanceIdRef.current) {
+        return
+      }
+
+      void loadNotes()
+    }
+
+    window.addEventListener(NOTES_CHANGED_EVENT, handleNotesChanged as EventListener)
+
+    const channel =
+      typeof BroadcastChannel !== 'undefined'
+        ? new BroadcastChannel(NOTES_CHANGED_CHANNEL)
+        : null
+
+    if (channel) {
+      channel.onmessage = (event: MessageEvent<{ source?: string }>) => {
+        if (event.data?.source === instanceIdRef.current) {
+          return
+        }
+
+        void loadNotes()
+      }
+    }
+
+    return () => {
+      window.removeEventListener(NOTES_CHANGED_EVENT, handleNotesChanged as EventListener)
+      channel?.close()
+    }
+  }, [loadNotes])
+
   // CRUD operations
   const createNote = useCallback(async (
     title: string,
@@ -115,6 +178,7 @@ export function useNotes() {
       
       // Update local state immediately (optimistic update)
       setNotes(currentNotes => [...currentNotes, newNote])
+      emitNotesChanged(instanceIdRef.current)
       
       // Trigger sync if online
       if (isOnline) {
@@ -133,13 +197,22 @@ export function useNotes() {
     try {
       setError(null)
       const updatedNote = await IndexedDBService.updateNote(id, updates)
+      const shouldReloadAfterUpdate =
+        updates.title !== undefined ||
+        updates.parentId !== undefined ||
+        updates.path !== undefined
       
-      // Update local state immediately (optimistic update)
-      setNotes(currentNotes => 
-        currentNotes.map(note => 
-          note.id === id ? updatedNote : note
+      if (shouldReloadAfterUpdate) {
+        await loadNotes()
+      } else {
+        // Update local state immediately (optimistic update)
+        setNotes(currentNotes =>
+          currentNotes.map(note =>
+            note.id === id ? updatedNote : note
+          )
         )
-      )
+      }
+      emitNotesChanged(instanceIdRef.current)
       
       // Trigger sync if online
       if (isOnline) {
@@ -152,7 +225,7 @@ export function useNotes() {
       setError(error instanceof Error ? error.message : 'Failed to update note')
       return false
     }
-  }, [isOnline, handleSync])
+  }, [isOnline, handleSync, loadNotes])
 
   const deleteNote = useCallback(async (id: number): Promise<boolean> => {
     try {
@@ -189,6 +262,7 @@ export function useNotes() {
 
         return currentNotes.filter(note => !idsToRemove.includes(note.id!))
       })
+      emitNotesChanged(instanceIdRef.current)
       
       // Trigger sync if online
       if (isOnline) {
@@ -213,7 +287,7 @@ export function useNotes() {
     }
   }, [])
 
-  const getNoteByClientId = useCallback(async (clientId: number): Promise<LocalNote | null> => {
+  const getNoteByClientId = useCallback(async (clientId: string): Promise<LocalNote | null> => {
     try {
       const note = await IndexedDBService.getNoteByClientId(clientId)
       return note || null

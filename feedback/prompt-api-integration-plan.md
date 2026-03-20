@@ -1,7 +1,7 @@
 # Chrome AI Prompt API Integration Plan for Brutal Notes
 
 ## Overview
-The Chrome AI Prompt API provides general-purpose AI capabilities that can transform Brutal Notes into an intelligent writing assistant. Unlike the specialized Proofreader API, this offers conversational AI, content generation, analysis, and multimodal processing.
+The Chrome AI Prompt API provides general-purpose AI capabilities that can transform Brutal Notes into an intelligent writing assistant. Unlike a narrow single-purpose correction tool, this offers conversational AI, content generation, analysis, and multimodal processing.
 
 ---
 
@@ -220,7 +220,7 @@ class MultimodalProcessor {
 ## 🎨 UI/UX Integration Points
 
 ### **1. AI Toolbar Enhancement**
-Extend the current proofreading toolbar with AI features:
+Extend the current assistance toolbar with AI features:
 
 ```typescript
 // Enhanced toolbar with AI capabilities

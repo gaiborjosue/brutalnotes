@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { AuthContainer } from './components/auth/AuthContainer'
 import { AuthLoader } from './components/auth/AuthLoader'
 import { MobileScanPage } from './features/scan-notes/MobileScanPage'
+import { Toaster } from './components/ui/sonner'
 
 // Auth-aware App Component
 function AppContent() {
@@ -26,13 +27,21 @@ function App() {
   const isMobileScanRoute = typeof window !== 'undefined' && window.location.pathname.startsWith('/scan')
 
   if (isMobileScanRoute) {
-    return <MobileScanPage />
+    return (
+      <>
+        <MobileScanPage />
+        <Toaster />
+      </>
+    )
   }
 
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+      <Toaster />
+    </>
   )
 }
 

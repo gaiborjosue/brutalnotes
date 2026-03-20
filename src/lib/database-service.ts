@@ -51,10 +51,11 @@ async function requireUser() {
 export function mapTodoRow(row: TodoRow): Todo {
   const createdAt = row.created_at ? new Date(row.created_at) : new Date()
   const updatedAt = row.updated_at ? new Date(row.updated_at) : createdAt
+  const clientId = row.client_id ?? row.id
 
   return {
-    id: row.client_id ?? undefined,
-    clientId: row.client_id ?? undefined,
+    id: undefined,
+    clientId,
     serverId: row.id,
     text: row.text,
     completed: row.completed,
@@ -69,10 +70,11 @@ export function mapTodoRow(row: TodoRow): Todo {
 export function mapNoteRow(row: NoteRow): Note {
   const createdAt = row.created_at ? new Date(row.created_at) : new Date()
   const updatedAt = row.updated_at ? new Date(row.updated_at) : createdAt
+  const clientId = row.client_id ?? row.id
 
   return {
-    id: row.client_id ?? undefined,
-    clientId: row.client_id ?? undefined,
+    id: undefined,
+    clientId,
     serverId: row.id,
     title: row.title,
     content: row.content,
@@ -375,7 +377,16 @@ export class NoteService {
     }
   }
 
-  static async updateNote(id: string, updates: Partial<Note>): Promise<DatabaseResult<Note>> {
+  static async updateNote(
+    id: string,
+    updates: {
+      title?: string
+      content?: string
+      path?: string
+      isFolder?: boolean
+      parentId?: string
+    }
+  ): Promise<DatabaseResult<Note>> {
     try {
       const user = await requireUser()
 

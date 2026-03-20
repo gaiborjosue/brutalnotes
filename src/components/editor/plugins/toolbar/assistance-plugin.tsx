@@ -4,8 +4,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Bot, TriangleAlert } from "lucide-react"
 import { $getRoot } from "lexical"
-import { $convertToMarkdownString } from "@lexical/markdown"
-import { TRANSFORMERS } from "@lexical/markdown"
 
 import { useToolbarContext } from "@/components/editor/context/toolbar-context"
 import { $createCollapsibleContainerNode } from "@/components/editor/nodes/collapsible-container-node"
@@ -14,8 +12,6 @@ import { $createCollapsibleContentNode } from "@/components/editor/nodes/collaps
 import { $createParagraphNode, $createTextNode } from "lexical"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger } from "@/components/ui/select"
 import Star28 from "@/components/stars/s28"
-import { proofreadMarkdown, type ProofreaderAPI } from "@/lib/markdown-proofreader"
-import { showProcessingToast } from "@/lib/share-utils"
 import ApiService from "@/lib/api-service"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -23,32 +19,51 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Copy, Check, Sparkles, ArrowLeftToLine } from "lucide-react"
 import AIDetectionService, { type AIDetectionResponse } from "@/lib/ai-detection-service"
+import { useOnlineStatus } from "@/hooks/useOnlineStatus"
+import { showErrorToast, showProcessingToast, showWarningToast } from "@/lib/notifications"
+import {
+  builtInAINeedsDownload,
+  createBuiltInAIDownloadMonitor,
+  createSummarizerSession,
+  finalizeBuiltInAIDownload,
+  getSummarizerAvailability,
+  type BuiltInAIAvailabilityStatus,
+} from "@/lib/chromium-ai"
+import {
+  getWritingAssistanceErrorDetails,
+  resolveWritingAssistanceProvider,
+  summarizeWithCloud,
+  type WritingAssistanceProvider,
+} from "@/lib/writing-assistance-service"
 
-// Assistance dropdown that groups Summarize, Proofread, and Detect AI actions
+function isBuiltInAISessionCreationError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === "InvalidStateError") {
+    return true
+  }
+
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const normalizedMessage = error.message.toLowerCase()
+  return (
+    normalizedMessage.includes("unable to create a session") ||
+    normalizedMessage.includes("check the result of availability() first")
+  )
+}
+
+// Assistance dropdown that groups note-assistance actions
 export function AssistancePlugin({ 
-  onProofreadingResult,
   onAIDetectionResult 
 }: { 
-  onProofreadingResult?: (data: {
-    originalText: string
-    correctedText: string
-    corrections?: {
-      startIndex: number
-      endIndex: number
-      suggestion: string
-      type: string
-      explanation?: string
-    }[]
-  } | null) => void
   onAIDetectionResult?: (result: AIDetectionResponse | null) => void
 }) {
   const summarize = useSummarizeAction()
-  const { handleProofread, proofreaderSupported, busy: proofreaderBusy } = useProofreadAction(onProofreadingResult)
   const cite = useCiteAction()
   const { handleAIDetection, busy: aiDetectionBusy } = useAIDetectionAction(onAIDetectionResult)
 
   // Disable select interaction while any action is busy
-  const isDisabled = summarize.busy || proofreaderBusy || cite.busy || aiDetectionBusy
+  const isDisabled = summarize.busy || cite.busy || aiDetectionBusy
 
   return (
     <>
@@ -75,23 +90,6 @@ export function AssistancePlugin({
                 strokeWidth={2}
               />
               <span>{summarize.label}</span>
-            </div>
-          </SelectItem>
-          <SelectItem
-            value="proofread"
-            disabled={!proofreaderSupported || proofreaderBusy}
-            onPointerUp={() => {
-              handleProofread()
-            }}
-          >
-            <div className="flex items-center gap-1">
-              <Star28
-                className="text-green-500 dark:text-green-400"
-                pathClassName="stroke-black dark:stroke-white"
-                size={16}
-                strokeWidth={2}
-              />
-              <span>Proofread{proofreaderBusy ? "…" : ""}</span>
             </div>
           </SelectItem>
           <SelectItem
@@ -131,67 +129,56 @@ export function AssistancePlugin({
   )
 }
 
-// --- Summarize action hook (reuses existing toolbar plugin logic) ---
-interface SummarizerOptions {
-  type?: 'key-points' | 'tl;dr' | 'teaser' | 'headline'
-  format?: 'markdown' | 'plain-text'
-  length?: 'short' | 'medium' | 'long'
-  monitor?: (m: EventTarget) => void
-}
-
-interface SummarizeOptions {
-  context?: string
-}
-
-interface Summarizer {
-  summarize: (text: string, options?: SummarizeOptions) => Promise<string>
-}
-
-declare global {
-  interface Window {
-    Summarizer?: {
-      availability: () => Promise<'readily' | 'after-download' | 'no'>
-      create: (options?: SummarizerOptions) => Promise<Summarizer>
-    }
-  }
-}
-
-function isChromeWithSummarizerAPI(): boolean {
-  return 'Summarizer' in self
-}
-
 function useSummarizeAction() {
   const { activeEditor } = useToolbarContext()
-  const [supported, setSupported] = useState(false)
+  const { isOnline } = useOnlineStatus()
   const [checking, setChecking] = useState(true)
   const [busy, setBusy] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [, setProgress] = useState(0)
-  const [availabilityStatus, setAvailabilityStatus] = useState<'readily' | 'after-download' | 'no' | null>(null)
+  const [availabilityStatus, setAvailabilityStatus] = useState<BuiltInAIAvailabilityStatus | null>(null)
 
-  useEffect(() => {
-    const check = async () => {
-      setChecking(true)
-      if (isChromeWithSummarizerAPI()) {
-        try {
-          const availability = await Summarizer.availability()
-          setAvailabilityStatus(availability)
-          setSupported(availability !== 'no')
-        } catch (e) {
-          setSupported(false)
-        }
-      } else {
-        setSupported(false)
-      }
+  const refreshAvailability = useCallback(async () => {
+    setChecking(true)
+    try {
+      const availability = await getSummarizerAvailability()
+      setAvailabilityStatus(availability)
+    } catch (e) {
+      setAvailabilityStatus('unsupported')
+    } finally {
       setChecking(false)
     }
-    check()
   }, [])
+
+  useEffect(() => {
+    void refreshAvailability()
+  }, [refreshAvailability])
+
+  useEffect(() => {
+    if (availabilityStatus !== 'downloading') {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshAvailability()
+    }, 2000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [availabilityStatus, refreshAvailability])
+
+  const provider = useMemo(
+    () => resolveWritingAssistanceProvider(availabilityStatus, isOnline),
+    [availabilityStatus, isOnline],
+  )
+  const supported = provider !== 'unavailable'
 
   const handle = useCallback(async () => {
     if (!supported || busy) return
     setBusy(true)
     const dismiss = showProcessingToast("Summarizing…")
+    let summarizer: Summarizer | null = null
     try {
       const editorState = activeEditor.getEditorState()
       let textContent = ""
@@ -200,38 +187,61 @@ function useSummarizeAction() {
         textContent = root.getTextContent()
       })
       if (!textContent.trim()) {
-        alert("No content to summarize")
+        showWarningToast("Nothing to summarize", "Add some note content first.")
         setBusy(false)
         return
       }
 
-      if (availabilityStatus === 'after-download') {
-        setDownloading(true)
-        setProgress(0)
+      let summary = ''
+      let activeProvider: WritingAssistanceProvider = provider
+      let activeAvailabilityStatus = availabilityStatus
+
+      if (provider === 'built-in') {
+        const latestAvailability = await getSummarizerAvailability()
+        setAvailabilityStatus(latestAvailability)
+        activeAvailabilityStatus = latestAvailability
+        activeProvider = resolveWritingAssistanceProvider(latestAvailability, isOnline)
       }
 
-      const summarizer = await Summarizer.create({
-        type: 'key-points',
-        format: 'plain-text',
-        length: 'medium',
-        monitor(m) {
-          m.addEventListener('downloadprogress', (e) => {
-            const ev = e as Event & { loaded: number }
-            const p = Math.round(ev.loaded * 100)
-            setProgress(p)
-            if (p >= 100) setDownloading(false)
+      if (activeProvider === 'built-in') {
+        const shouldTrackDownload = builtInAINeedsDownload(activeAvailabilityStatus)
+
+        try {
+          summarizer = await createSummarizerSession(
+            shouldTrackDownload
+              ? createBuiltInAIDownloadMonitor(setDownloading, setProgress)
+              : undefined,
+          )
+        } catch (error) {
+          if (!isOnline || !isBuiltInAISessionCreationError(error)) {
+            throw error
+          }
+
+          setAvailabilityStatus('unsupported')
+          activeProvider = 'cloud'
+        }
+
+        if (activeProvider === 'built-in') {
+          if (!summarizer) {
+            throw new Error("Built-in summarizer session could not be created.")
+          }
+
+          if (shouldTrackDownload) {
+            finalizeBuiltInAIDownload(setDownloading, setProgress)
+            void refreshAvailability()
+          }
+
+          summary = await summarizer.summarize(textContent, {
+            context: 'This is a note or document that needs to be summarized for quick reference.'
           })
         }
-      })
-
-      if (downloading) {
-        setDownloading(false)
-        setProgress(100)
       }
 
-      const summary = await summarizer.summarize(textContent, {
-        context: 'This is a note or document that needs to be summarized for quick reference.'
-      })
+      if (activeProvider === 'cloud') {
+        summary = await summarizeWithCloud(textContent)
+      } else if (activeProvider === 'unavailable') {
+        throw new Error("Summarizer is unavailable right now.")
+      }
 
       activeEditor.update(() => {
         const root = $getRoot()
@@ -256,160 +266,35 @@ function useSummarizeAction() {
       })
     } catch (e) {
       console.error("Error generating summary:", e)
-      alert("Failed to generate summary. Please try again.")
+      const errorDetails = getWritingAssistanceErrorDetails(e)
+      if (errorDetails.kind === "quota") {
+        showWarningToast(
+          "Cloud summary unavailable",
+          errorDetails.retryAfterSeconds
+            ? `Writing-assistance quota is exhausted right now. Try again in about ${errorDetails.retryAfterSeconds} seconds.`
+            : "Writing-assistance quota is exhausted right now. Try again later or use Chrome built-in AI when available.",
+        )
+      } else {
+        showErrorToast("Failed to generate summary", errorDetails.message || "Please try again.")
+      }
       setDownloading(false)
     } finally {
+      summarizer?.destroy()
       dismiss()
       setBusy(false)
     }
-  }, [supported, busy, availabilityStatus, activeEditor, downloading])
+  }, [supported, busy, availabilityStatus, activeEditor, provider, refreshAvailability])
 
   const label = useMemo(() => {
     if (checking) return "Checking…"
-    if (!supported) return "Summarize (unavailable)"
-    if (downloading) return "Downloading…"
+    if (!supported) return isOnline ? "Summarize (cloud)" : "Summarize (unavailable)"
+    if (downloading || availabilityStatus === 'downloading') return "Downloading…"
     if (busy) return "Summarizing…"
-    return availabilityStatus === 'after-download' ? "Summarize*" : "Summarize"
-  }, [checking, supported, downloading, busy, availabilityStatus])
+    if (provider === 'cloud') return "Summarize (cloud)"
+    return builtInAINeedsDownload(availabilityStatus) ? "Summarize*" : "Summarize"
+  }, [checking, supported, downloading, busy, availabilityStatus, provider, isOnline])
 
   return { supported, busy: busy || downloading || checking, handle, label }
-}
-
-// --- Proofread action hook (reuses existing toolbar plugin logic) ---
-interface ProofreaderOptions {
-  expectedInputLanguages?: string[]
-  monitor?: (m: EventTarget) => void
-}
-
-interface ProofreadResult {
-  correctedInput: string
-  corrections: {
-    startIndex: number
-    endIndex: number
-    suggestion: string
-    type: string
-    explanation?: string
-  }[]
-}
-
-interface Proofreader {
-  proofread: (text: string) => Promise<ProofreadResult>
-}
-
-declare global {
-  interface Window {
-    Proofreader?: {
-      availability: () => Promise<'readily' | 'after-download' | 'no'>
-      create: (options?: ProofreaderOptions) => Promise<Proofreader>
-    }
-  }
-}
-
-function isChromeWithProofreaderAPI(): boolean {
-  return 'Proofreader' in self
-}
-
-function useProofreadAction(onProofreadingResult?: (data: {
-  originalText: string
-  correctedText: string
-  corrections?: {
-    startIndex: number
-    endIndex: number
-    suggestion: string
-    type: string
-    explanation?: string
-  }[]
-} | null) => void) {
-  const { activeEditor } = useToolbarContext()
-  const [supported, setSupported] = useState(false)
-  const [checking, setChecking] = useState(true)
-  const [busy, setBusy] = useState(false)
-  const [downloading, setDownloading] = useState(false)
-  const [, setProgress] = useState(0)
-  const [availabilityStatus, setAvailabilityStatus] = useState<'readily' | 'after-download' | 'no' | null>(null)
-
-  useEffect(() => {
-    const check = async () => {
-      setChecking(true)
-      if (isChromeWithProofreaderAPI()) {
-        try {
-          const availability = await Proofreader.availability()
-          setAvailabilityStatus(availability)
-          setSupported(availability !== 'no')
-        } catch (e) {
-          setSupported(false)
-        }
-      } else {
-        setSupported(false)
-      }
-      setChecking(false)
-    }
-    check()
-  }, [])
-
-  const handleProofread = useCallback(async () => {
-    if (!supported || busy) return
-    setBusy(true)
-    const dismiss = showProcessingToast("Proofreading…")
-    try {
-      const editorState = activeEditor.getEditorState()
-      let markdownContent = ""
-      editorState.read(() => {
-        // Prefer entire document converted to markdown for structure-preserving proofreading
-        markdownContent = $convertToMarkdownString(TRANSFORMERS)
-      })
-
-      if (!markdownContent.trim()) {
-        alert("No content to proofread")
-        setBusy(false)
-        return
-      }
-
-      if (availabilityStatus === 'after-download') {
-        setDownloading(true)
-        setProgress(0)
-      }
-
-      const proofreader = await Proofreader.create({
-        expectedInputLanguages: ['en'],
-        monitor(m) {
-          m.addEventListener('downloadprogress', (e) => {
-            const ev = e as Event & { loaded: number }
-            const p = Math.round(ev.loaded * 100)
-            setProgress(p)
-            if (p >= 100) setDownloading(false)
-          })
-        }
-      })
-
-      if (downloading) {
-        setDownloading(false)
-        setProgress(100)
-      }
-
-      const result = await proofreadMarkdown(markdownContent, proofreader as ProofreaderAPI)
-      if (onProofreadingResult) {
-        onProofreadingResult({
-          originalText: result.originalMarkdown,
-          correctedText: result.correctedMarkdown,
-          corrections: result.blocks.flatMap((b) => b.corrections || [])
-        })
-      }
-    } catch (e) {
-      console.error("Error proofreading markdown:", e)
-      alert("Failed to proofread content. Please try again.")
-      setDownloading(false)
-    } finally {
-      dismiss()
-      setBusy(false)
-    }
-  }, [supported, busy, availabilityStatus, activeEditor, downloading, onProofreadingResult])
-
-  return {
-    handleProofread,
-    proofreaderSupported: supported && !checking,
-    busy: busy || downloading || checking,
-  }
 }
 
 // --- Cite action hook ---
@@ -547,11 +432,9 @@ function useAIDetectionAction(onAIDetectionResult?: (result: AIDetectionResponse
       })
 
       if (!textContent.trim()) {
-        alert("No content to analyze")
+        showWarningToast("Nothing to analyze", "Add some note content first.")
         return
       }
-
-      console.log('Sending text for AI detection (first 200 chars):', textContent.substring(0, 200))
       
       const result = await AIDetectionService.detectAI({
         text: textContent,
@@ -560,18 +443,14 @@ function useAIDetectionAction(onAIDetectionResult?: (result: AIDetectionResponse
       })
 
       if (result.success && result.data) {
-        console.log('AI detection result:', result.data)
-        if (result.data.sentence_scores && result.data.sentence_scores.length > 0) {
-          console.log('First detected sentence:', result.data.sentence_scores[0])
-        }
         onAIDetectionResult?.(result.data)
       } else {
-        alert(`AI Detection failed: ${result.error || 'Unknown error'}`)
+        showErrorToast("AI detection failed", result.error || "Unknown error")
         onAIDetectionResult?.(null)
       }
     } catch (error) {
       console.error("Error during AI detection:", error)
-      alert("Failed to detect AI content. Please try again.")
+      showErrorToast("Failed to detect AI content", "Please try again.")
       onAIDetectionResult?.(null)
     } finally {
       dismiss()
@@ -584,5 +463,3 @@ function useAIDetectionAction(onAIDetectionResult?: (result: AIDetectionResponse
     busy
   }
 }
-
-

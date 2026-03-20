@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, forwardRef, useImperativeHandle, type KeyboardEvent } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef, forwardRef, useImperativeHandle, type KeyboardEvent } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { 
   Folder, 
   FolderOpen, 
@@ -13,13 +14,63 @@ import {
   Edit3,
   FolderPlus,
   FilePlus,
-  Trash
+  Trash,
+  Search,
+  X,
+  CircleHelp,
 } from "lucide-react"
 import Star27 from "@/components/stars/s27"
 import type { FileNode } from "@/lib/types"
 import { useNotes } from "@/hooks"
-import nickGenerator from "nick-generator"
+import { cn } from "@/lib/utils"
 
+const TEMP_FOLDER_NAME = "temp"
+const TEMP_FOLDER_LABEL = "Drafts"
+const DEFAULT_FOLDER_NAME = "New folder"
+const DEFAULT_NOTE_NAME = "Untitled note"
+
+function isProtectedFolderName(name: string): boolean {
+  return name === TEMP_FOLDER_NAME
+}
+
+function getDisplayName(node: Pick<FileNode, "type" | "name">): string {
+  return node.type === "folder" && isProtectedFolderName(node.name) ? TEMP_FOLDER_LABEL : node.name
+}
+
+function countDescendantFiles(node: FileNode): number {
+  if (node.type === "file") {
+    return 1
+  }
+
+  return (node.children ?? []).reduce((total, child) => total + countDescendantFiles(child), 0)
+}
+
+function filterFileTree(nodes: FileNode[], query: string): FileNode[] {
+  const normalizedQuery = query.trim().toLowerCase()
+  if (!normalizedQuery) {
+    return nodes
+  }
+
+  return nodes.flatMap((node) => {
+    const labelMatches = getDisplayName(node).toLowerCase().includes(normalizedQuery)
+    const filteredChildren = node.children ? filterFileTree(node.children, normalizedQuery) : undefined
+    const hasMatchingChildren = Boolean(filteredChildren && filteredChildren.length > 0)
+
+    if (!labelMatches && !hasMatchingChildren) {
+      return []
+    }
+
+    return [
+      {
+        ...node,
+        expanded: node.type === "folder" ? true : node.expanded,
+        children: node.type === "folder"
+          ? (labelMatches ? node.children : filteredChildren)
+          : node.children,
+      },
+    ]
+  })
+}
 
 export interface FileSystemPanelRef {
   refreshFileTree: () => Promise<void>
@@ -44,12 +95,9 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     createNote, 
     updateNote, 
     deleteNote, 
-    getNoteById,
     isInitialLoading, 
     isSyncing, 
     isLiveSync,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    refresh: refreshNotes
   } = useNotes()
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [editingFile, setEditingFile] = useState<string | null>(null)
@@ -57,6 +105,9 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Ensure temp folder exists on component mount
   useEffect(() => {
@@ -65,13 +116,13 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       
       try {
         const tempFolders = notes.filter(note => 
-          note.isFolder && note.title === 'temp'
+          note.isFolder && note.title === TEMP_FOLDER_NAME
         )
         
         if (tempFolders.length === 0) {
           console.log('🔧 Initializing temp folder for new user')
           try {
-            await createNote('temp', '', 'temp', true, undefined)
+            await createNote(TEMP_FOLDER_NAME, '', TEMP_FOLDER_NAME, true, undefined)
             console.log('✅ Temp folder created successfully')
           } catch (error) {
             console.error('❌ Failed to create temp folder:', error)
@@ -116,6 +167,14 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   useEffect(() => {
     setFileTree(prev => mergeTreeState(prev, shapeFileTree))
   }, [shapeFileTree, mergeTreeState])
+
+  useEffect(() => {
+    if (!isSearchOpen) {
+      return
+    }
+
+    searchInputRef.current?.focus()
+  }, [isSearchOpen])
 
   const refreshFileTree = useCallback(async () => {
     setFileTree(prev => mergeTreeState(prev, shapeFileTree))
@@ -202,7 +261,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   }
 
   const startRename = (id: string, currentName: string) => {
-    if (currentName === 'temp') {
+        if (currentName === TEMP_FOLDER_NAME) {
       return
     }
     setEditingFile(id)
@@ -223,7 +282,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       // Get the note to check if it's a file or folder
       try {
         // Check if it's the temp folder (can't be renamed)
-        if (note.isFolder && note.title === 'temp') {
+        if (note.isFolder && note.title === TEMP_FOLDER_NAME) {
           setEditingFile(null)
           setEditingName("")
           return
@@ -256,20 +315,19 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   // Create new folder
   const createNewFolder = async () => {
     try {
-      const folderName = `New Folder ${Date.now()}`
       const newFolder = await createNote(
-        folderName,
+        DEFAULT_FOLDER_NAME,
         '',
-        folderName,
+        DEFAULT_FOLDER_NAME,
         true // isFolder
       )
       
       if (newFolder) {
         await refreshFileTree()
         // Auto-start renaming the new folder
-        if (newFolder.id) {
-          setEditingFile(newFolder.id.toString())
-          setEditingName(folderName)
+        if (newFolder.clientId) {
+          setEditingFile(newFolder.clientId)
+          setEditingName(DEFAULT_FOLDER_NAME)
         }
       }
     } catch (error) {
@@ -284,7 +342,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       let tempFolderId: number | undefined
 
       const tempFolder = notes.find(note => 
-        note.isFolder && note.title === 'temp'
+        note.isFolder && note.title === TEMP_FOLDER_NAME
       )
       tempFolderId = tempFolder?.id
 
@@ -292,7 +350,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       if (!tempFolderId) {
         console.log('🔧 Creating missing temp folder')
         const newTempFolder = await createNote(
-          'temp',
+          TEMP_FOLDER_NAME,
           '',
           undefined, // path will be generated automatically
           true // isFolder
@@ -328,9 +386,7 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         },
       })
 
-      const baseName = nickGenerator()
-
-      const noteName = `${baseName.split(' ')[0]}-${new Date().getDate()}-${new Date().getFullYear()}.lexical`
+      const noteName = `${DEFAULT_NOTE_NAME}.lexical`
       const newNote = await createNote(
         noteName,
         defaultContent,
@@ -342,17 +398,16 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
       if (newNote) {
         await refreshFileTree()
         // Auto-start renaming the new note
-        if (newNote.id) {
+        if (newNote.id && newNote.clientId) {
           const newId = newNote.id
-          setEditingFile(newId.toString())
+          setEditingFile(newNote.clientId)
           // Remove .lexical for editing (user will see clean name)
-          setEditingName(noteName.replace('.lexical', ''))
+          setEditingName(DEFAULT_NOTE_NAME)
           
           // Automatically open the new file in the editor after a brief delay
           // This allows the user to see the file being created and gives time for renaming
           setTimeout(() => {
             if (onFileClick) {
-              console.log('📖 Auto-opening newly created file in editor')
               onFileClick(newId)
             }
           }, 100)
@@ -404,6 +459,9 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
           throw new Error('Target folder not found')
         }
 
+        const fileNoteId = fileNote.id
+        const parentNoteId = parentNote.id
+
         const fileNameFromPath = fileNote.path
           ? fileNote.path.split('/').filter(Boolean).pop() ?? fileNote.title
           : fileNote.title
@@ -418,8 +476,8 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
 
         const performMove = async () => {
           try {
-            await updateNote(fileNote.id, {
-              parentId: parentNote.id,
+            await updateNote(fileNoteId, {
+              parentId: parentNoteId,
               path: newPath
             })
 
@@ -456,25 +514,63 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
     setDropTarget(null)
   }
 
+  const visibleTree = useMemo(
+    () => filterFileTree(fileTree, searchQuery),
+    [fileTree, searchQuery],
+  )
+
+  const handleCreateFolderClick = (event: React.MouseEvent) => {
+    event.stopPropagation()
+    void createNewFolder()
+  }
+
+  const handleCreateNoteClick = (event: React.MouseEvent) => {
+    event.stopPropagation()
+    if (onNewFileClick) {
+      onNewFileClick(createNewNote)
+      return
+    }
+
+    void createNewNote()
+  }
+
+  const handleSearchToggle = (event: React.MouseEvent) => {
+    event.stopPropagation()
+    setIsSearchOpen((previous) => (searchQuery ? true : !previous))
+  }
+
+  const handleSearchDismiss = (event: React.MouseEvent) => {
+    event.stopPropagation()
+    if (searchQuery) {
+      setSearchQuery("")
+      searchInputRef.current?.focus()
+      return
+    }
+
+    setIsSearchOpen(false)
+  }
+
   const renderFileNode = (node: FileNode, depth = 0) => {
     const indent = depth * 16
     const isEditing = editingFile === node.id
     const isCurrentFile = node.type === 'file' && node.noteId === currentFileId
+    const folderFileCount = node.type === 'folder' ? countDescendantFiles(node) : 0
+    const displayName = getDisplayName(node)
+    const canManageNode = !(node.type === "folder" && isProtectedFolderName(node.name))
 
     return (
       <div key={node.id}>
         <div
-          className={`flex items-center gap-2 p-1 ${
-            node.type === 'folder' ? 'cursor-pointer' : 'cursor-pointer'
-          } ${
-            isCurrentFile 
-              ? 'bg-yellow-200 border-2 border-yellow-400 shadow-[2px_2px_0px_0px_#000] font-bold' 
-              : dropTarget === node.id 
-                ? 'bg-blue-100 border-2 border-blue-400 border-dashed' 
-                : 'hover:bg-gray-100'
-          } ${
-            draggedItem === node.id ? 'opacity-50' : ''
-          }`}
+          className={cn(
+            "group flex items-center gap-2 rounded-base border-2 px-2 py-1.5 transition-colors",
+            "cursor-pointer",
+            isCurrentFile
+              ? "border-black bg-main/35 shadow-[2px_2px_0px_0px_#000]"
+              : dropTarget === node.id
+                ? "border-blue-500 bg-blue-100 border-dashed"
+                : "border-transparent hover:border-black/20 hover:bg-black/5",
+            draggedItem === node.id && "opacity-50",
+          )}
           style={{ paddingLeft: `${indent + 8}px` }}
           draggable={node.type === 'file' && !isEditing}
           onDragStart={(e) => handleDragStart(e, node.id, node.type)}
@@ -493,12 +589,12 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         >
           {node.type === 'folder' ? (
             node.expanded ? (
-              <FolderOpen className="h-4 w-4 text-blue-600" />
+              <FolderOpen className="h-4 w-4 shrink-0 text-blue-600" />
             ) : (
-              <Folder className="h-4 w-4 text-blue-600" />
+              <Folder className="h-4 w-4 shrink-0 text-blue-600" />
             )
           ) : (
-            <FileText className={`h-4 w-4 ${isCurrentFile ? 'text-yellow-800' : 'text-gray-600'}`} />
+            <FileText className={cn("h-4 w-4 shrink-0", isCurrentFile ? "text-black" : "text-gray-600")} />
           )}
           
           {isEditing ? (
@@ -514,9 +610,20 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
               autoFocus
             />
           ) : (
-            <span className="text-xs font-mono text-black flex-1 w-0 leading-tight" title={node.name}>
-              <span className="block truncate">{node.name}</span>
-            </span>
+            <div className="min-w-0 flex-1" title={displayName}>
+              <span className={cn(
+                "block truncate text-sm leading-tight text-black",
+                node.type === "folder" ? "font-black" : "font-mono",
+                isCurrentFile && "font-black",
+              )}>
+                {displayName}
+              </span>
+              {node.type === "folder" ? (
+                <span className="block text-[10px] font-mono uppercase tracking-wide text-black/55">
+                  {folderFileCount === 0 ? "Empty" : `${folderFileCount} ${folderFileCount === 1 ? "note" : "notes"}`}
+                </span>
+              ) : null}
+            </div>
           )}
           
           {!isEditing && (
@@ -524,46 +631,53 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
               <PopoverTrigger asChild>
                 <Button 
                   size="sm" 
-                  className="h-6 w-6 p-0 hover:bg-blue-300 border-2 border-black bg-white shrink-0"
+                  variant="neutral"
+                  className={cn(
+                    "size-7 shrink-0 p-0",
+                    "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+                    isCurrentFile && "opacity-100",
+                  )}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <MoreVertical className="h-3 w-3" />
+                  <MoreVertical />
                 </Button>
               </PopoverTrigger>
               <PopoverContent 
-                className="w-40 p-1 border-2 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
+                className="w-44 p-1"
                 align="end"
               >
-                <div className="space-y-1">
-                <Button
+                <div className="flex flex-col gap-1">
+                  <Button
                     size="sm"
-                    className="w-full justify-start text-left font-mono text-xs border-2 border-black hover:bg-blue-300 bg-white"
+                    variant="neutral"
+                    className="w-full justify-start text-left font-mono text-xs"
                     onClick={() => startRename(node.id, node.name)}
-                    disabled={node.type === 'folder' && node.name === 'temp'}
+                    disabled={!canManageNode}
                   >
-                    <Edit3 className="h-3 w-3 mr-2" />
+                    <Edit3 data-icon="inline-start" />
                     Rename
                   </Button>
                   
-                  {/* Clear Notes option - only for folders */}
-                  {node.type === 'folder' && (
+                  {node.type === 'folder' && folderFileCount > 0 && (
                     <Button
                       size="sm"
-                      className="w-full justify-start text-left font-mono text-xs text-orange-600 border-2 border-black hover:bg-blue-300 bg-white"
+                      variant="neutral"
+                      className="w-full justify-start text-left font-mono text-xs text-orange-700"
                       onClick={() => clearNotesFromFolder(node.id)}
                     >
-                      <Trash className="h-3 w-3 mr-2" />
+                      <Trash data-icon="inline-start" />
                       Clear Notes
                     </Button>
                   )}
                   
                   <Button
                     size="sm"
-                    className="w-full justify-start text-left font-mono text-xs text-red-600 border-2 border-black hover:bg-blue-300 bg-white"
+                    variant="neutral"
+                    className="w-full justify-start text-left font-mono text-xs text-red-600"
                     onClick={() => node.noteId && deleteFile(node.id)}
-                    disabled={node.type === 'folder' && node.name === 'temp'}
+                    disabled={!canManageNode}
                   >
-                    <Trash2 className="h-3 w-3 mr-2" />
+                    <Trash2 data-icon="inline-start" />
                     Delete
                   </Button>
                 </div>
@@ -590,8 +704,8 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
   }
 
   const cardClasses = collapsed
-    ? "border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
-    : "h-full min-h-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white flex flex-col"
+    ? "gap-0 pt-6 pb-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white"
+    : "h-full min-h-0 gap-0 pt-6 pb-0 border-4 border-black shadow-[4px_4px_0px_0px_#000] bg-white flex flex-col"
 
   return (
     <Card
@@ -605,73 +719,176 @@ export const FileSystemPanel = forwardRef<FileSystemPanelRef, FileSystemPanelPro
         tabIndex={onToggle ? 0 : undefined}
         onKeyDown={handleHeaderKeyDown}
       >
-        <CardTitle className="text-lg font-black text-black flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <Star27 size={20} color="#000" />
-            FILES
-            {/* Show sync status with subtle dots */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-lg font-black text-black">
+                <Star27 size={20} color="#000" />
+                FILES
+              </CardTitle>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex size-5 items-center justify-center text-black/60 transition-colors hover:text-black focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-black/20"
+                    aria-label="Files help"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <CircleHelp />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="bottom"
+                  className="max-w-[240px] rounded-base border-2 border-border bg-background px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-foreground shadow-shadow"
+                >
+                  New notes start in Drafts. Drag files into folders when you want structure.
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex size-5 items-center justify-center text-black/60 transition-colors hover:text-black focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-black/20",
+                      (isSearchOpen || Boolean(searchQuery)) && "text-black",
+                    )}
+                    aria-label="Search files"
+                    onClick={handleSearchToggle}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <Search />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="bottom"
+                  className="rounded-base border-2 border-border bg-background px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-foreground shadow-shadow"
+                >
+                  Search files
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            <div
+              className={cn(
+                "grid transition-all duration-200 ease-out",
+                isSearchOpen || searchQuery ? "mt-2 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+              )}
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/45" />
+                  <Input
+                    ref={searchInputRef}
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      event.stopPropagation()
+                      if (event.key === "Escape") {
+                        if (searchQuery) {
+                          setSearchQuery("")
+                        } else {
+                          setIsSearchOpen(false)
+                        }
+                      }
+                    }}
+                    placeholder="Search files and folders"
+                    className="h-9 border-black bg-white pr-10 pl-9 font-mono"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="neutral"
+                    className="absolute right-1 top-1/2 size-7 -translate-y-1/2 p-0"
+                    onClick={handleSearchDismiss}
+                    title={searchQuery ? "Clear search" : "Close search"}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
             {isInitialLoading && (
-              <span className="text-xs font-mono text-gray-600 bg-yellow-200 px-2 py-1 rounded">
-                LOADING...
+              <span className="rounded-base border-2 border-black bg-yellow-200 px-2 py-1 text-[10px] font-mono font-black uppercase tracking-wide text-black">
+                Loading
               </span>
             )}
             {isSyncing && !isInitialLoading && (
-              <div 
-                className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" 
+              <div
+                className="h-2.5 w-2.5 rounded-full bg-yellow-500 animate-pulse"
                 title="Syncing..."
               />
             )}
             {isLiveSync && (
-              <div 
-                className="w-2 h-2 bg-green-500 rounded-full" 
+              <div
+                className="h-2.5 w-2.5 rounded-full bg-green-500"
                 title="Live sync active"
               />
             )}
-          </span>
-          {!collapsed && (
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                className="h-7 px-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-gray-100 text-black"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  createNewFolder()
-                }}
-                title="New folder"
-              >
-                <FolderPlus className="h-4 w-4" />
-              </Button>
-              <Button
-                size="sm"
-                className="h-7 px-2 border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-white hover:bg-gray-100 text-black"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  if (onNewFileClick) {
-                    onNewFileClick(createNewNote)
-                  } else {
-                    createNewNote()
-                  }
-                }}
-                title="New note"
-              >
-                <FilePlus className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </CardTitle>
+          </div>
+        </div>
       </CardHeader>
       {!collapsed && (
-        <CardContent className="p-0 pt-0 flex-1 min-h-0">
-          <ScrollArea className="h-full min-h-0">
-            <div className="p-3 pb-4 space-y-1">
+        <CardContent className="flex flex-1 min-h-0 flex-col p-0 pt-0">
+          <div className="grid grid-cols-2 border-b-2 border-black/10 bg-blue-100" onClick={(event) => event.stopPropagation()}>
+            <div className="border-r-2 border-black">
+              <Button
+                size="sm"
+                variant="noShadow"
+                className="h-10 w-full rounded-none border-0 bg-yellow-300 font-black text-black hover:bg-yellow-400"
+                onClick={handleCreateNoteClick}
+              >
+                <FilePlus data-icon="inline-start" />
+                New note
+              </Button>
+            </div>
+            <div>
+              <Button
+                size="sm"
+                variant="noShadow"
+                className="h-10 w-full rounded-none border-0 bg-blue-100 font-black text-black hover:bg-blue-200"
+                onClick={handleCreateFolderClick}
+              >
+                <FolderPlus data-icon="inline-start" />
+                New folder
+              </Button>
+            </div>
+          </div>
+
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-3 pb-4">
               {isInitialLoading ? (
-                <div className="text-center text-gray-500 font-mono">Loading files...</div>
-              ) : fileTree.length === 0 ? (
-                <div className="text-center text-gray-500 font-mono text-sm">
-                  No files yet. Save your first note! 📝
+                <div className="py-8 text-center text-sm font-mono text-gray-500">Loading files...</div>
+              ) : visibleTree.length === 0 && searchQuery ? (
+                <div className="rounded-base border-2 border-dashed border-black/30 bg-black/5 px-4 py-8 text-center">
+                  <p className="font-black text-black">No matches for "{searchQuery}"</p>
+                  <p className="mt-1 text-sm font-mono text-black/60">Try a different name or clear the search.</p>
+                  <Button
+                    size="sm"
+                    variant="neutral"
+                    className="mt-3"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    Clear search
+                  </Button>
+                </div>
+              ) : visibleTree.length === 0 ? (
+                <div className="rounded-base border-2 border-dashed border-black/30 bg-black/5 px-4 py-8 text-center">
+                  <p className="font-black text-black">No files yet</p>
+                  <p className="mt-1 text-sm font-mono text-black/60">Create a note to start filling this space.</p>
                 </div>
               ) : (
-                fileTree.map(node => renderFileNode(node))
+                <div className="space-y-1">
+                  {visibleTree.map(node => renderFileNode(node))}
+                </div>
               )}
             </div>
           </ScrollArea>

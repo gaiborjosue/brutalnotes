@@ -69,7 +69,7 @@ export function UnsavedChangesPlugin({
       }
     }
 
-    if (!onManualSave || currentFileId === null || !hasUnsavedChanges) {
+    if (!onManualSave || !hasUnsavedChanges) {
       clearAutoSaveTimer()
       return
     }

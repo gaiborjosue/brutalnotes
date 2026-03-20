@@ -1,8 +1,9 @@
-// BRUTAL NOTES - Save Keyboard Shortcut Plugin (Ctrl+Alt+S)
+// BRUTAL NOTES - Save Keyboard Shortcut Plugin
 
 import { useEffect, useCallback } from "react"
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
 import { useNotes } from "@/hooks"
+import { showErrorToast, showSuccessToast } from "@/lib/notifications"
 
 interface SaveShortcutPluginProps {
   onFileSaved?: () => void
@@ -28,6 +29,7 @@ export function SaveShortcutPlugin({ onFileSaved, currentDraftFileId, onCurrentF
 
       if (!tempFolderId) {
         console.error('❌ Temp folder not found - cannot auto-save')
+        showErrorToast("Save failed", "Temp folder is unavailable.")
         return
       }
 
@@ -45,21 +47,19 @@ export function SaveShortcutPlugin({ onFileSaved, currentDraftFileId, onCurrentF
             updatedAt: new Date()
           })
           result = { success }
-          console.log('💾 Auto-saved existing file:', currentFile.title)
         } else {
           console.error('❌ Current file not found for auto-save')
+          showErrorToast("Save failed", "The current file could not be found.")
           return
         }
       } else {
         // Create new auto-save file with timestamp
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
         const autoSaveName = `auto-save-${timestamp}.lexical`
-        const notePath = `/temp/${autoSaveName}`
-
         const newNote = await createNote(
           autoSaveName,
           contentJson,
-          notePath,
+          undefined,
           false, // isFolder
           tempFolderId
         )
@@ -67,7 +67,6 @@ export function SaveShortcutPlugin({ onFileSaved, currentDraftFileId, onCurrentF
         if (newNote?.id) {
           savedNoteId = newNote.id
           result = { success: true, data: newNote }
-          console.log('💾 Auto-saved new file:', autoSaveName)
         } else {
           result = { success: false }
         }
@@ -104,101 +103,22 @@ export function SaveShortcutPlugin({ onFileSaved, currentDraftFileId, onCurrentF
   }, [editor, notes, getNoteById, createNote, updateNote, currentDraftFileId, onFileSaved, onCurrentFileChange])
 
   const showSaveIndicator = () => {
-    // Create a subtle toast notification
-    const toast = document.createElement('div')
-    toast.textContent = '💾 Saved'
-    toast.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: rgba(34, 197, 94, 0.95);
-      color: white;
-      padding: 6px 12px;
-      border-radius: 6px;
-      border: 1px solid rgba(0, 0, 0, 0.2);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      font-weight: 600;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 13px;
-      z-index: 10000;
-      backdrop-filter: blur(8px);
-      animation: toastSlideIn 2.5s cubic-bezier(0.16, 1, 0.3, 1);
-      pointer-events: none;
-    `
-
-    // Add toast animation keyframes if not already added
-    if (!document.getElementById('toast-styles')) {
-      const style = document.createElement('style')
-      style.id = 'toast-styles'
-      style.textContent = `
-        @keyframes toastSlideIn {
-          0% { 
-            transform: translateX(100%) translateY(100%); 
-            opacity: 0; 
-            scale: 0.8;
-          }
-          10% { 
-            transform: translateX(0) translateY(0); 
-            opacity: 1; 
-            scale: 1;
-          }
-          85% { 
-            transform: translateX(0) translateY(0); 
-            opacity: 1; 
-            scale: 1;
-          }
-          100% { 
-            transform: translateX(100%) translateY(100%); 
-            opacity: 0; 
-            scale: 0.8;
-          }
-        }
-      `
-      document.head.appendChild(style)
-    }
-
-    document.body.appendChild(toast)
-    setTimeout(() => {
-      if (toast.parentNode) {
-        toast.parentNode.removeChild(toast)
-      }
-    }, 2500)
+    showSuccessToast("Saved")
   }
 
   const showSaveError = () => {
-    const toast = document.createElement('div')
-    toast.textContent = '❌ Save failed'
-    toast.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: rgba(239, 68, 68, 0.95);
-      color: white;
-      padding: 6px 12px;
-      border-radius: 6px;
-      border: 1px solid rgba(0, 0, 0, 0.2);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      font-weight: 600;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 13px;
-      z-index: 10000;
-      backdrop-filter: blur(8px);
-      animation: toastSlideIn 3.5s cubic-bezier(0.16, 1, 0.3, 1);
-      pointer-events: none;
-    `
-
-    document.body.appendChild(toast)
-    setTimeout(() => {
-      if (toast.parentNode) {
-        toast.parentNode.removeChild(toast)
-      }
-    }, 3500)
+    showErrorToast("Save failed", "Please try again.")
   }
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Check for Ctrl+Alt+S (or Cmd+Alt+S on Mac)
-      if ((event.ctrlKey || event.metaKey) && event.altKey && event.key === 's') {
+      // Support the standard save shortcut and keep the old alternate binding.
+      const isSaveKey = event.key.toLowerCase() === 's'
+      const isPrimaryModifierPressed = event.ctrlKey || event.metaKey
+      const usesLegacyAlternateBinding = isPrimaryModifierPressed && event.altKey && isSaveKey
+      const usesStandardBinding = isPrimaryModifierPressed && !event.shiftKey && isSaveKey
+
+      if (usesStandardBinding || usesLegacyAlternateBinding) {
         event.preventDefault() // Prevent any default behavior
         performSilentSave()
       }

@@ -1,0 +1,72 @@
+diff --git a/node_modules/@lexical/react/LexicalNodeContextMenuPlugin.dev.js b/node_modules/@lexical/react/LexicalNodeContextMenuPlugin.dev.js
+index e52bac0..10075e2 100644
+--- a/node_modules/@lexical/react/LexicalNodeContextMenuPlugin.dev.js
++++ b/node_modules/@lexical/react/LexicalNodeContextMenuPlugin.dev.js
+@@ -5399,9 +5399,14 @@ const NodeContextMenuPlugin = /*#__PURE__*/React.forwardRef(({
+           ...getFloatingProps(),
+           children: renderItems.map((item, index) => {
+             if (item.type === 'item') {
++              const {
++                key,
++                ...itemProps
++              } = item;
+               return /*#__PURE__*/jsxRuntime.jsx(ContextMenuItem, {
++                key: key,
+                 ...getItemProps({
+-                  ...item,
++                  ...itemProps,
+                   onClick() {
+                     item.onClick();
+                     setIsOpen(false);
+@@ -5417,9 +5422,14 @@ const NodeContextMenuPlugin = /*#__PURE__*/React.forwardRef(({
+                 })
+               });
+             } else if (item.type === 'separator') {
++              const {
++                key,
++                ...itemProps
++              } = item;
+               return /*#__PURE__*/jsxRuntime.jsx(ContextMenuSeparatorItem, {
++                key: key,
+                 ...getItemProps({
+-                  ...item,
++                  ...itemProps,
+                   ref(node) {
+                     listItemsRef.current[index] = node;
+                   },
+diff --git a/node_modules/@lexical/react/LexicalNodeContextMenuPlugin.dev.mjs b/node_modules/@lexical/react/LexicalNodeContextMenuPlugin.dev.mjs
+index 57b75fb..0c5b5b8 100644
+--- a/node_modules/@lexical/react/LexicalNodeContextMenuPlugin.dev.mjs
++++ b/node_modules/@lexical/react/LexicalNodeContextMenuPlugin.dev.mjs
+@@ -5384,9 +5384,14 @@ const NodeContextMenuPlugin = /*#__PURE__*/forwardRef(({
+           ...getFloatingProps(),
+           children: renderItems.map((item, index) => {
+             if (item.type === 'item') {
++              const {
++                key,
++                ...itemProps
++              } = item;
+               return /*#__PURE__*/jsx(ContextMenuItem, {
++                key: key,
+                 ...getItemProps({
+-                  ...item,
++                  ...itemProps,
+                   onClick() {
+                     item.onClick();
+                     setIsOpen(false);
+@@ -5402,9 +5407,14 @@ const NodeContextMenuPlugin = /*#__PURE__*/forwardRef(({
+                 })
+               });
+             } else if (item.type === 'separator') {
++              const {
++                key,
++                ...itemProps
++              } = item;
+               return /*#__PURE__*/jsx(ContextMenuSeparatorItem, {
++                key: key,
+                 ...getItemProps({
+-                  ...item,
++                  ...itemProps,
+                   ref(node) {
+                     listItemsRef.current[index] = node;
+                   },

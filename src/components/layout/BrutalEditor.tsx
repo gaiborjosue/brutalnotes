@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, type MutableRefObject } from "react"
 import {
   type InitialConfigType,
   LexicalComposer,
@@ -60,7 +60,6 @@ import { FontBackgroundToolbarPlugin } from "@/components/editor/plugins/toolbar
 import { FontSizeToolbarPlugin } from "@/components/editor/plugins/toolbar/font-size-toolbar-plugin"
 import { CodeLanguageToolbarPlugin } from "@/components/editor/plugins/toolbar/code-language-toolbar-plugin"
 import { AssistancePlugin } from "@/components/editor/plugins/toolbar/assistance-plugin"
-import { ProofreadingPanel } from "@/components/editor/plugins/toolbar/ProofreadingPanel"
 import { AIDetectionPanel } from "@/components/editor/ai-detection-panel"
 
 import type { AIDetectionResponse } from "@/lib/ai-detection-service"
@@ -91,7 +90,9 @@ import { CodeHighlightPlugin } from "@/components/editor/plugins/code-highlight-
 import { CodeActionMenuPlugin } from "@/components/editor/plugins/code-action-menu-plugin"
 import { ContextMenuPlugin } from "@/components/editor/plugins/context-menu-plugin"
 import { editorTheme } from "@/components/editor/themes/editor-theme"
+import { Input } from "@/components/ui/input"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { showErrorToast } from "@/lib/notifications"
 import { useNotes } from "@/hooks"
 
 
@@ -114,6 +115,20 @@ const initialValue = {
     version: 1,
   },
 } as unknown as SerializedEditorState
+
+const NOTE_FILE_EXTENSION = ".lexical"
+
+function getDisplayFileName(title: string): string {
+  return title.endsWith(NOTE_FILE_EXTENSION)
+    ? title.slice(0, -NOTE_FILE_EXTENSION.length)
+    : title
+}
+
+function normalizeNoteTitle(title: string): string {
+  return title.endsWith(NOTE_FILE_EXTENSION)
+    ? title
+    : `${title}${NOTE_FILE_EXTENSION}`
+}
 
 const editorConfig: InitialConfigType = {
   namespace: "BrutalNotesEditor",
@@ -200,19 +215,6 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
     }
   }, [notes, createNote])
   
-  // Proofreading panel state
-  const [proofreadingData, setProofreadingData] = useState<{
-    originalText: string
-    correctedText: string
-    corrections?: {
-      startIndex: number
-      endIndex: number
-      suggestion: string
-      type: string
-      explanation?: string
-    }[]
-  } | null>(null)
-  
   // AI Detection panel state
   const [aiDetectionData, setAIDetectionData] = useState<AIDetectionResponse | null>(null)
 
@@ -220,56 +222,56 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
   // Ref to store the editor replacement function
   const replaceEditorContentRef = useRef<((text: string) => void) | null>(null)
 
-  // Fetch current file name when currentFileId changes
+  const currentNote = notes.find(note => note.id === currentFileId)
+  const currentNoteTitle = currentNote?.title
+
+  // Keep the current file name in sync with note updates, not just file switches.
   useEffect(() => {
+    let isCancelled = false
+
     const fetchFileName = async () => {
-      if (currentFileId) {
-        try {
-          const note = await getNoteById(currentFileId)
-          if (note) {
-            // Remove .lexical extension for display
-            const displayName = note.title.endsWith('.lexical') 
-              ? note.title.slice(0, -8)
-              : note.title
-            setCurrentFileName(displayName)
-          } else {
-            setCurrentFileName(null)
-          }
-        } catch (error) {
-          console.error('Error fetching file name:', error)
+      if (!currentFileId) {
+        setCurrentFileName(null)
+        return
+      }
+
+      if (currentNoteTitle) {
+        setCurrentFileName(getDisplayFileName(currentNoteTitle))
+        return
+      }
+
+      try {
+        const note = await getNoteById(currentFileId)
+        if (isCancelled) {
+          return
+        }
+
+        if (note) {
+          setCurrentFileName(getDisplayFileName(note.title))
+        } else {
           setCurrentFileName(null)
         }
-      } else {
+      } catch (error) {
+        if (isCancelled) {
+          return
+        }
+
+        console.error('Error fetching file name:', error)
         setCurrentFileName(null)
       }
     }
 
-    fetchFileName()
-  }, [currentFileId, getNoteById])  // Combined handler for current file changes
+    void fetchFileName()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [currentFileId, currentNoteTitle, getNoteById])
+
   const handleCurrentFileChange = useCallback((fileId: number | null) => {
     setCurrentDraftFileId(fileId) // Update internal state
     onCurrentFileChange?.(fileId)   // Notify parent (MainLayout)
   }, [onCurrentFileChange])
-
-  // Proofreading panel handlers
-  const handleProofreadingAccept = useCallback(() => {
-    if (proofreadingData && replaceEditorContentRef.current) {
-      // Replace the editor content with the corrected text
-      replaceEditorContentRef.current(proofreadingData.correctedText)
-      console.log("Accepted proofreading changes and replaced editor content")
-      setProofreadingData(null)
-    } else if (proofreadingData) {
-      console.warn("Editor replacement function not available")
-    }
-  }, [proofreadingData])
-
-  const handleProofreadingReject = useCallback(() => {
-    setProofreadingData(null)
-  }, [])
-
-  const handleProofreadingClose = useCallback(() => {
-    setProofreadingData(null)
-  }, [])
 
   // AI Detection handlers
   const handleAIDetectionResult = useCallback((result: AIDetectionResponse | null) => {
@@ -289,8 +291,7 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
           }}
         >
           <TooltipProvider>
-          {/* Main editor area - takes remaining space when panel is open */}
-          <div className={`flex-1 flex flex-col overflow-hidden ${proofreadingData ? 'min-h-0' : ''}`}>
+          <div className="flex-1 flex flex-col overflow-hidden">
             <BrutalEditorPlugins 
               onFileSaved={onFileSaved} 
               onLoadFile={onLoadFile} 
@@ -298,7 +299,6 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
               onCurrentFileChange={handleCurrentFileChange}
               onUnsavedChangesWarning={onUnsavedChangesWarning}
               currentFileName={currentFileName}
-              onProofreadingResult={setProofreadingData}
               onAIDetectionResult={handleAIDetectionResult}
               replaceEditorContentRef={replaceEditorContentRef}
               onInsertContent={onInsertContent}
@@ -307,6 +307,8 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
               getOrCreateTempFolder={getOrCreateTempFolder}
               createNote={createNote}
               updateNote={updateNote}
+              currentNoteClientId={currentNote?.clientId}
+              currentNoteTitle={currentNote?.title}
             />
 
             <OnChangePlugin
@@ -316,18 +318,6 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
                 }}
               />
           </div>
-
-          {/* Proofreading Panel - shown at bottom when active */}
-          {proofreadingData && (
-            <div className="border-t border-gray-200 bg-white overflow-y-auto max-h-96">
-              <ProofreadingPanel
-                correctedText={proofreadingData.correctedText}
-                onAccept={handleProofreadingAccept}
-                onReject={handleProofreadingReject}
-                onClose={handleProofreadingClose}
-              />
-            </div>
-          )}
 
           {/* AI Detection Panel - shown as side panel when active */}
           <AIDetectionPanel
@@ -343,35 +333,30 @@ export function BrutalEditor({ onFileSaved, onLoadFile, onUnsavedChangesWarning,
 
 const placeholder = `Start writing here...`
 
-function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onProofreadingResult, onAIDetectionResult, replaceEditorContentRef, onInsertContent, onReplaceContent, onLoadSharedMarkdown, getOrCreateTempFolder, createNote, updateNote }: { 
+function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCurrentFileChange, onUnsavedChangesWarning, currentFileName, onAIDetectionResult, replaceEditorContentRef, onInsertContent, onReplaceContent, onLoadSharedMarkdown, getOrCreateTempFolder, createNote, updateNote, currentNoteClientId, currentNoteTitle }: {
   onFileSaved?: () => void
   onLoadFile?: (loadFunction: (content: string, fileId: number) => void) => void
   currentDraftFileId?: number | null
   onCurrentFileChange?: (fileId: number | null) => void
   onUnsavedChangesWarning?: (hasUnsavedChanges: boolean, saveFunction: () => Promise<void>) => void
   currentFileName?: string | null
-  onProofreadingResult?: (data: {
-    originalText: string
-    correctedText: string
-    corrections?: {
-      startIndex: number
-      endIndex: number
-      suggestion: string
-      type: string
-      explanation?: string
-    }[]
-  } | null) => void
   onAIDetectionResult?: (result: AIDetectionResponse | null) => void
-  replaceEditorContentRef?: React.MutableRefObject<((text: string) => void) | null>
+  replaceEditorContentRef?: MutableRefObject<((text: string) => void) | null>
   onInsertContent?: (insertFunction: (content: string) => void) => void
   onReplaceContent?: (replaceFunction: ((content: string) => void) | null) => void
   onLoadSharedMarkdown?: (loadFunction: ((markdown: string) => void) | null) => void
   getOrCreateTempFolder?: () => Promise<number | undefined>
-  createNote?: (title: string, content: string, path: string, isFolder?: boolean, parentId?: number) => Promise<{ id?: number } | null>
-  updateNote?: (id: number, updates: { content?: string; updatedAt?: Date }) => Promise<boolean>
+  createNote?: (title: string, content: string, path?: string, isFolder?: boolean, parentId?: number) => Promise<{ id?: number } | null>
+  updateNote?: (id: number, updates: { title?: string; content?: string; updatedAt?: Date }) => Promise<boolean>
+  currentNoteClientId?: string
+  currentNoteTitle?: string
 }) {
   const [editor] = useLexicalComposerContext()
   const contentEditableRef = useRef<HTMLDivElement>(null)
+  const currentFileNameInputRef = useRef<HTMLInputElement>(null)
+  const [isRenamingCurrentFile, setIsRenamingCurrentFile] = useState(false)
+  const [pendingFileName, setPendingFileName] = useState("")
+  const [isSavingFileName, setIsSavingFileName] = useState(false)
   
   // Create manual save handler with access to editor context
   const handleManualSave = useCallback(async () => {
@@ -570,14 +555,108 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
     // Handle floating anchor element if needed
   }
 
+  useEffect(() => {
+    if (!isRenamingCurrentFile) {
+      setPendingFileName(currentFileName ?? "")
+      return
+    }
+
+    currentFileNameInputRef.current?.focus()
+    currentFileNameInputRef.current?.select()
+  }, [currentFileName, isRenamingCurrentFile])
+
+  const startCurrentFileRename = useCallback(() => {
+    if (!currentDraftFileId || !currentFileName) {
+      return
+    }
+
+    setPendingFileName(currentFileName)
+    setIsRenamingCurrentFile(true)
+  }, [currentDraftFileId, currentFileName])
+
+  const cancelCurrentFileRename = useCallback(() => {
+    setPendingFileName(currentFileName ?? "")
+    setIsRenamingCurrentFile(false)
+  }, [currentFileName])
+
+  const commitCurrentFileRename = useCallback(async () => {
+    if (!currentDraftFileId || !currentFileName || !updateNote || isSavingFileName) {
+      setIsRenamingCurrentFile(false)
+      return
+    }
+
+    const trimmedFileName = pendingFileName.trim()
+    if (!trimmedFileName) {
+      showErrorToast("Rename failed", "Note name cannot be empty.")
+      currentFileNameInputRef.current?.focus()
+      return
+    }
+
+    const normalizedCurrentTitle = normalizeNoteTitle(currentFileName)
+    const normalizedNextTitle = normalizeNoteTitle(trimmedFileName)
+
+    if (normalizedCurrentTitle === normalizedNextTitle) {
+      setIsRenamingCurrentFile(false)
+      return
+    }
+
+    setIsSavingFileName(true)
+
+    try {
+      const success = await updateNote(currentDraftFileId, {
+        title: normalizedNextTitle,
+        updatedAt: new Date(),
+      })
+
+      if (!success) {
+        showErrorToast("Rename failed", "The note name could not be updated.")
+        return
+      }
+
+      setIsRenamingCurrentFile(false)
+    } finally {
+      setIsSavingFileName(false)
+    }
+  }, [currentDraftFileId, currentFileName, updateNote, isSavingFileName, pendingFileName])
+
   return (
     <div className="h-full flex flex-col">
-      {/* Current File Title - Minimal Display */}
+      {/* Current File Title */}
       {currentFileName && (
-        <div className="px-3 py-1 bg-neutral-50 border-b border-neutral-200">
-          <span className="text-xs text-neutral-600 font-mono">
-            📄 {currentFileName}
-          </span>
+        <div className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-3 py-1.5">
+          <span className="text-xs text-neutral-500 font-mono">📄</span>
+          {isRenamingCurrentFile ? (
+            <Input
+              ref={currentFileNameInputRef}
+              value={pendingFileName}
+              onChange={(event) => setPendingFileName(event.target.value)}
+              onBlur={() => {
+                void commitCurrentFileRename()
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  void commitCurrentFileRename()
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault()
+                  cancelCurrentFileRename()
+                }
+              }}
+              disabled={isSavingFileName}
+              className="h-7 max-w-sm border-black bg-white font-mono text-xs"
+              aria-label="Rename current note"
+            />
+          ) : (
+            <button
+              type="button"
+              className="min-w-0 truncate text-left text-xs font-mono text-neutral-700 transition-colors hover:text-black hover:underline"
+              onClick={startCurrentFileRename}
+              title="Rename current note"
+            >
+              {currentFileName}
+            </button>
+          )}
         </div>
       )}
       
@@ -619,7 +698,6 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
             <FontBackgroundToolbarPlugin />
             <div className="w-px h-6 bg-black mx-1" />
             <AssistancePlugin 
-              onProofreadingResult={onProofreadingResult}
               onAIDetectionResult={onAIDetectionResult}
             />
           </div>
@@ -644,7 +722,10 @@ function BrutalEditorPlugins({ onFileSaved, onLoadFile, currentDraftFileId, onCu
         />
         
         {/* Context Menu Plugin */}
-        <ContextMenuPlugin />
+        <ContextMenuPlugin
+          currentNoteClientId={currentNoteClientId}
+          currentNoteTitle={currentNoteTitle}
+        />
         
         {/* Code Plugins */}
         <CodeHighlightPlugin />

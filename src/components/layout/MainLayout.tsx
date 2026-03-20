@@ -18,10 +18,11 @@ import Star24 from "@/components/stars/s24"
 import { useAuth } from "@/contexts/AuthContext"
 import { ScanNotesPopover } from "@/features/scan-notes/ScanNotesPopover"
 import { TourStep, TourProvider } from "@/components/guided-tour"
+import { showSuccessToast } from "@/lib/notifications"
 
 export function MainLayout() {
   const { user, signOut } = useAuth()
-  const { getNoteById } = useNotes()
+  const { notes, getNoteById, getNoteByClientId } = useNotes()
   const fileSystemRef = useRef<{ refreshFileTree: () => Promise<void> } | null>(null)
   const [loadFileContent, setLoadFileContent] = useState<((content: string, fileId: number) => void) | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
@@ -97,34 +98,7 @@ export function MainLayout() {
           }
           // Clear the hash to clean up the URL
           window.history.replaceState(null, '', window.location.pathname)
-          
-          // Show a toast to indicate shared content was loaded
-          const toast = document.createElement('div')
-          toast.className = `
-            fixed top-4 right-4 z-50 max-w-sm w-full
-            bg-blue-500/80 backdrop-blur-sm text-white
-            px-4 py-3 rounded-lg shadow-lg
-            border border-blue-300/20
-            font-mono text-sm font-bold
-            animate-in slide-in-from-top-2 duration-300
-          `
-          toast.innerHTML = `
-            <div class="flex items-center gap-2">
-              <svg class="w-4 h-4 text-blue-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-              </svg>
-              <span>Shared note loaded</span>
-            </div>
-          `
-          
-          document.body.appendChild(toast)
-          
-          setTimeout(() => {
-            toast.style.animation = 'fade-out 300ms ease-out forwards'
-            setTimeout(() => {
-              document.body.removeChild(toast)
-            }, 300)
-          }, 3000)
+          showSuccessToast("Shared note loaded")
         }
       }
     }
@@ -247,7 +221,7 @@ export function MainLayout() {
   }, [currentFileId, loadFileContent])
 
   // Check for unsaved changes before performing an action
-  const checkUnsavedChanges = (action: () => void | Promise<void>, description: string) => {
+  const checkUnsavedChanges = useCallback((action: () => void | Promise<void>, description: string) => {
     if (hasUnsavedChanges && unsavedSaveFunction) {
       setPendingAction(() => action)
       setActionDescription(description)
@@ -267,9 +241,9 @@ export function MainLayout() {
       console.error(`Action threw synchronously (${description}):`, error)
     }
     return true // Action performed
-  }
+  }, [hasUnsavedChanges, unsavedSaveFunction])
 
-  const handleFileClick = async (noteId: number) => {
+  const handleFileClick = useCallback(async (noteId: number) => {
     const loadFile = async () => {
       // Load file content into editor
       if (loadFileContent) {
@@ -288,7 +262,18 @@ export function MainLayout() {
     }
 
     checkUnsavedChanges(loadFile, "switch to another file")
-  }
+  }, [loadFileContent, getNoteById, checkUnsavedChanges])
+
+  const currentNote = notes.find((note) => note.id === currentFileId)
+
+  const handleOpenLinkedTodoNote = useCallback(async (clientId: string) => {
+    const note = await getNoteByClientId(clientId)
+    if (!note?.id) {
+      throw new Error('Linked note not found')
+    }
+
+    await handleFileClick(note.id)
+  }, [getNoteByClientId, handleFileClick])
 
   // Dialog handlers
   const handleSaveAndContinue = async () => {
@@ -342,6 +327,8 @@ export function MainLayout() {
           <TodoPanel
             collapsed={isMobileVariant ? activeMobilePanel !== 'todo' : false}
             onToggle={isMobileVariant ? () => handleMobilePanelToggle('todo') : undefined}
+            currentNoteClientId={currentNote?.clientId}
+            onOpenLinkedNoteByClientId={handleOpenLinkedTodoNote}
             className={isMobileVariant && activeMobilePanel === 'todo' ? 'min-h-[55vh] max-h-[75vh]' : undefined}
           />
         </TourStep>

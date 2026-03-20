@@ -1,5 +1,5 @@
 // Dialog component to warn users about unsaved changes
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, Save, Trash2, X } from "lucide-react"
 
@@ -59,7 +59,7 @@ export function UnsavedChangesDialog({
           
           <Button
             onClick={handleDiscard}
-            variant="outline"
+            variant="neutral"
             className="w-full border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-red-400 hover:bg-red-500 text-black font-black brutal-hover"
           >
             <Trash2 className="h-4 w-4 mr-2" />
@@ -68,7 +68,7 @@ export function UnsavedChangesDialog({
           
           <Button
             onClick={handleCancel}
-            variant="outline"
+            variant="neutral"
             className="w-full border-2 border-black shadow-[2px_2px_0px_0px_#000] bg-gray-300 hover:bg-gray-400 text-black font-black brutal-hover"
           >
             <X className="h-4 w-4 mr-2" />

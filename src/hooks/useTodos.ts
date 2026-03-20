@@ -5,6 +5,23 @@ import { GlobalSyncCoordinator } from '../services/globalSyncCoordinator'
 import { useOnlineStatus } from './useOnlineStatus'
 import { useAuth } from '../contexts/AuthContext'
 
+const TODOS_CHANGED_EVENT = 'brutalnotes:todos-changed'
+const TODOS_CHANGED_CHANNEL = 'brutalnotes-todos'
+
+type TodoLinkMetadata = Pick<LocalTodo, 'sourceNoteClientId' | 'sourceNoteTitle'>
+
+function emitTodosChanged(source: string): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(TODOS_CHANGED_EVENT, { detail: { source } }))
+  }
+
+  if (typeof BroadcastChannel !== 'undefined') {
+    const channel = new BroadcastChannel(TODOS_CHANGED_CHANNEL)
+    channel.postMessage({ source })
+    channel.close()
+  }
+}
+
 /**
  * Offline-first hook for managing todos
  * Replaces ElectricSQL useShape for todos with local IndexedDB storage
@@ -18,9 +35,14 @@ export function useTodos() {
   
   const { isOnline, isOnlineAfterOffline } = useOnlineStatus()
   const { user, loading: authLoading } = useAuth()
+  const instanceIdRef = useRef(
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `todos-${Math.random().toString(36).slice(2)}`
+  )
 
   // Load todos from IndexedDB (stable reference)
-  const loadTodosRef = useRef<() => Promise<void>>()
+  const loadTodosRef = useRef<(() => Promise<void>) | undefined>(undefined)
   loadTodosRef.current = async () => {
     try {
       const localTodos = await IndexedDBService.getAllTodos()
@@ -52,6 +74,7 @@ export function useTodos() {
         // Reload todos after successful sync
         await loadTodos()
         setLastSyncTime(new Date())
+        emitTodosChanged(instanceIdRef.current)
       } else {
         setError(result.error || 'Sync failed')
       }
@@ -73,14 +96,19 @@ export function useTodos() {
     const initializeData = async () => {
       try {
         setIsInitialLoading(true)
+
+        const ownerChanged = await IndexedDBService.ensureLocalDataOwnership(user.id)
+        if (ownerChanged) {
+          GlobalSyncCoordinator.reset(user.id)
+        }
         
-        // Use global sync coordinator to prevent duplicate initial syncs
+        // Use global sync coordinator to prevent duplicate startup syncs.
         if (isOnline) {
-          console.log('useTodos: Requesting coordinated initial sync...', { user: user?.id?.substring(0, 8) })
-          const seedResult = await GlobalSyncCoordinator.performInitialSyncOnce()
+          console.log('useTodos: Requesting coordinated startup sync...', { user: user.id.substring(0, 8) })
+          const seedResult = await GlobalSyncCoordinator.performStartupSyncOnce(user.id)
           if (!seedResult.success) {
-            console.error('Initial sync failed:', seedResult.error)
-            setError(`Initial sync failed: ${seedResult.error}`)
+            console.error('Startup sync failed:', seedResult.error)
+            setError(`Startup sync failed: ${seedResult.error}`)
           }
         }
         
@@ -106,14 +134,52 @@ export function useTodos() {
     }
   }, [isOnlineAfterOffline, user, authLoading, handleSync])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const handleTodosChanged = (event: Event) => {
+      const source = (event as CustomEvent<{ source?: string }>).detail?.source
+      if (source === instanceIdRef.current) {
+        return
+      }
+
+      void loadTodos()
+    }
+
+    window.addEventListener(TODOS_CHANGED_EVENT, handleTodosChanged as EventListener)
+
+    const channel =
+      typeof BroadcastChannel !== 'undefined'
+        ? new BroadcastChannel(TODOS_CHANGED_CHANNEL)
+        : null
+
+    if (channel) {
+      channel.onmessage = (event: MessageEvent<{ source?: string }>) => {
+        if (event.data?.source === instanceIdRef.current) {
+          return
+        }
+
+        void loadTodos()
+      }
+    }
+
+    return () => {
+      window.removeEventListener(TODOS_CHANGED_EVENT, handleTodosChanged as EventListener)
+      channel?.close()
+    }
+  }, [loadTodos])
+
   // CRUD operations
-  const addTodo = useCallback(async (text: string): Promise<LocalTodo | null> => {
+  const addTodo = useCallback(async (text: string, metadata?: TodoLinkMetadata): Promise<LocalTodo | null> => {
     try {
       setError(null)
-      const newTodo = await IndexedDBService.addTodo(text)
+      const newTodo = await IndexedDBService.addTodo(text, metadata)
       
       // Update local state immediately (optimistic update)
       setTodos(currentTodos => [newTodo, ...currentTodos])
+      emitTodosChanged(instanceIdRef.current)
       
       // Trigger sync if online
       if (isOnline) {
@@ -139,6 +205,7 @@ export function useTodos() {
           todo.id === id ? updatedTodo : todo
         )
       )
+      emitTodosChanged(instanceIdRef.current)
       
       // Trigger sync if online
       if (isOnline) {
@@ -162,6 +229,7 @@ export function useTodos() {
       setTodos(currentTodos => 
         currentTodos.filter(todo => todo.id !== id)
       )
+      emitTodosChanged(instanceIdRef.current)
       
       // Trigger sync if online
       if (isOnline) {
@@ -187,6 +255,7 @@ export function useTodos() {
           todo.id === id ? updatedTodo : todo
         )
       )
+      emitTodosChanged(instanceIdRef.current)
       
       // Trigger sync if online
       if (isOnline) {

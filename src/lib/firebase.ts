@@ -18,13 +18,15 @@ const firebaseConfig = {
 export const firebaseApp = initializeApp(firebaseConfig);
 export const firebaseAnalytics = getAnalytics(firebaseApp);
 
+const firebaseAppCheckDebugToken =
+  import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN?.trim() || ''
+
 // Enable App Check debug token when running locally so reCAPTCHA isn't required
 if (typeof window !== 'undefined') {
   const debugHosts = new Set(['localhost', '127.0.0.1']);
-  if (debugHosts.has(window.location.hostname)) {
+  if (debugHosts.has(window.location.hostname) && firebaseAppCheckDebugToken) {
     (globalThis as { FIREBASE_APPCHECK_DEBUG_TOKEN?: string }).FIREBASE_APPCHECK_DEBUG_TOKEN =
-      '1AC95824-DCDB-4503-B783-E4768E8CA086';
-    console.info('🔐 Firebase App Check debug token enabled for local development');
+      firebaseAppCheckDebugToken;
   }
 }
 
@@ -48,6 +50,24 @@ export const geminiModel = getGenerativeModel(ai, {
   mode: InferenceMode.PREFER_ON_DEVICE,
   inCloudParams: {
     model: "gemini-2.5-flash",
+  }
+});
+
+export const geminiCloudModel = getGenerativeModel(ai, {
+  model: "gemini-2.5-flash",
+  mode: InferenceMode.ONLY_IN_CLOUD,
+  inCloudParams: {
+    model: "gemini-2.5-flash",
+  }
+});
+
+// Writing assistance does not need the heavier cloud model and should not compete
+// with scan/transcription traffic for the same per-model quota bucket.
+export const geminiWritingCloudModel = getGenerativeModel(ai, {
+  model: "gemini-2.0-flash-lite",
+  mode: InferenceMode.ONLY_IN_CLOUD,
+  inCloudParams: {
+    model: "gemini-2.0-flash-lite",
   }
 });
 
