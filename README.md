@@ -93,7 +93,14 @@ Create a `.env` file with:
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_key
 VITE_FIREBASE_API_KEY=your_firebase_key
-# ... other Firebase configs
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
+VITE_FIREBASE_APP_ID=your_firebase_app_id
+VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
+VITE_FIREBASE_RECAPTCHA_SITE_KEY=your_recaptcha_site_key
+VITE_FIREBASE_APPCHECK_DEBUG_TOKEN=your_local_appcheck_debug_token
 ```
 
 ## 📦 Build

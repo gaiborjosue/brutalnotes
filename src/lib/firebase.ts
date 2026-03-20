@@ -4,19 +4,31 @@ import { getAnalytics } from "firebase/analytics";
 import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from "firebase/ai";
 
+function getRequiredEnv(name: string): string {
+  const value = import.meta.env[name]?.trim()
+
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`)
+  }
+
+  return value
+}
+
 const firebaseConfig = {
-  apiKey: "AIzaSyD1cdvmYnNBPWIwa6LLC5dYrXzhaRYIJrE",
-  authDomain: "brutalnotes-7b216.firebaseapp.com",
-  projectId: "brutalnotes-7b216",
-  storageBucket: "brutalnotes-7b216.firebasestorage.app",
-  messagingSenderId: "694647027161",
-  appId: "1:694647027161:web:3c9c0dd3d2aea95a9c55c8",
-  measurementId: "G-TY3YEP7HW8"
+  apiKey: getRequiredEnv('VITE_FIREBASE_API_KEY'),
+  authDomain: getRequiredEnv('VITE_FIREBASE_AUTH_DOMAIN'),
+  projectId: getRequiredEnv('VITE_FIREBASE_PROJECT_ID'),
+  storageBucket: getRequiredEnv('VITE_FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: getRequiredEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+  appId: getRequiredEnv('VITE_FIREBASE_APP_ID'),
+  measurementId: getRequiredEnv('VITE_FIREBASE_MEASUREMENT_ID'),
 };
 
 // Initialize Firebase
 export const firebaseApp = initializeApp(firebaseConfig);
 export const firebaseAnalytics = getAnalytics(firebaseApp);
+
+const firebaseRecaptchaSiteKey = getRequiredEnv('VITE_FIREBASE_RECAPTCHA_SITE_KEY')
 
 const firebaseAppCheckDebugToken =
   import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN?.trim() || ''
@@ -32,7 +44,7 @@ if (typeof window !== 'undefined') {
 
 // Initialize App Check with reCAPTCHA v3 for security
 export const appCheck = initializeAppCheck(firebaseApp, {
-  provider: new ReCaptchaV3Provider('6LerqMwrAAAAAP0Vi3vZ9AOJWsy3hcJZF6MDge4c'),
+  provider: new ReCaptchaV3Provider(firebaseRecaptchaSiteKey),
   
   // Optional argument. If true, the SDK automatically refreshes App Check
   // tokens as needed.
